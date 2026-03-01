@@ -453,14 +453,18 @@ async function startRecording(tabId, refreshFirst) {
     });
   }
 
-  // Initial A11y snapshot
-  console.log('[WebTape] Capturing initial A11y snapshot…');
+  // Gather basic page info and initial A11y snapshot
+  console.log('[WebTape] Capturing initial page info and A11y snapshot…');
+  const tab = await chrome.tabs.get(tabId);
   const initialA11y = await captureA11ySummary();
   timeline.push({
     context_id: nextContextId(),
     timestamp: Date.now(),
     state: {
       type: 'INITIAL_LOAD',
+      url: tab.url || '',
+      title: tab.title || '',
+      fav_icon_url: tab.favIconUrl || '',
       a11y_tree_summary: initialA11y,
     },
   });
