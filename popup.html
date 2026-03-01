@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebTape Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="icons/icon48.png" alt="WebTape" class="logo">
+      <div class="title-block">
+        <h1>WebTape</h1>
+        <span class="subtitle">Web Action Recorder</span>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">Idle</span>
+    </div>
+
+    <div class="controls">
+      <button id="btnDirectRecord" class="btn btn-primary">
+        <span class="btn-icon">&#9654;</span>
+        Direct Record
+      </button>
+      <button id="btnRefreshRecord" class="btn btn-secondary">
+        <span class="btn-icon">&#8635;</span>
+        Refresh &amp; Record
+      </button>
+      <button id="btnStop" class="btn btn-danger" disabled>
+        <span class="btn-icon">&#9646;&#9646;</span>
+        Stop &amp; Export
+      </button>
+    </div>
+
+    <div class="stats" id="statsPanel">
+      <div class="stat-item">
+        <span class="stat-label">Actions</span>
+        <span class="stat-value" id="statActions">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Requests</span>
+        <span class="stat-value" id="statRequests">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Contexts</span>
+        <span class="stat-value" id="statContexts">0</span>
+      </div>
+    </div>
+
+    <div class="message" id="message"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
