@@ -26,6 +26,9 @@ jobs:
       - name: Build extension package
         run: npm run build
 
+      - name: Rename package with version
+        run: mv dist/webtape.zip dist/webtape-${GITHUB_REF_NAME}.zip
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

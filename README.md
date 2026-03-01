@@ -54,6 +54,17 @@ webtape_<timestamp>.zip
 | Aggregation Engine | `background.js` | Sliding-window context matching |
 | Export Module | `background.js` | JSZip packaging, `chrome.downloads` trigger |
 
+## Release
+
+To publish a new release, push a version tag to the `main` branch:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This triggers the GitHub Actions workflow which builds the extension package and creates a GitHub Release with the `webtape-v1.0.0.zip` artifact.
+
 ## File Overview
 
 ```
