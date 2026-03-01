@@ -352,7 +352,10 @@ async function onNetworkIdle() {
 // ---------------------------------------------------------------------------
 
 async function startRecording(tabId, refreshFirst) {
+  console.log('[WebTape] startRecording called — tabId:', tabId, ', refreshFirst:', refreshFirst);
+
   if (recorderState !== 'idle') {
+    console.error('[WebTape] startRecording: already in state', recorderState);
     throw new Error('Recording already in progress.');
   }
 
@@ -395,6 +398,7 @@ async function startRecording(tabId, refreshFirst) {
   }
 
   // Initial A11y snapshot
+  console.log('[WebTape] Capturing initial A11y snapshot…');
   const initialA11y = await captureA11ySummary();
   timeline.push({
     context_id: nextContextId(),
@@ -404,10 +408,14 @@ async function startRecording(tabId, refreshFirst) {
       a11y_tree_summary: initialA11y,
     },
   });
+  console.log('[WebTape] Recording started successfully.');
 }
 
 async function stopAndExport() {
+  console.log('[WebTape] stopAndExport called, current state:', recorderState);
+
   if (recorderState !== 'recording') {
+    console.error('[WebTape] stopAndExport: not in recording state, aborting.');
     throw new Error('Not recording.');
   }
 
@@ -415,15 +423,21 @@ async function stopAndExport() {
 
   // Detach debugger
   if (activeTabId !== null) {
+    console.log('[WebTape] Detaching debugger from tab', activeTabId);
     await new Promise((resolve) => {
       chrome.debugger.detach({ tabId: activeTabId }, () => {
-        // Ignore errors (tab may have been closed)
+        if (chrome.runtime.lastError) {
+          console.warn('[WebTape] Debugger detach warning:', chrome.runtime.lastError.message);
+        }
         resolve();
       });
     });
   }
 
   // Build the ZIP
+  console.log('[WebTape] Building ZIP — timeline blocks:', timeline.length,
+    ', completed requests:', completedRequests.size);
+
   const zip = new JSZip();
   const allRequests = [...completedRequests.values()];
 
@@ -470,21 +484,29 @@ async function stopAndExport() {
     resFolder.file(`${entry.reqId}_res.json`, JSON.stringify(resPayload, null, 2));
   }
 
-  // Generate blob and trigger download
-  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-  const url = URL.createObjectURL(blob);
+  // Generate base64-encoded ZIP and build a data URL.
+  // Service Workers don't have URL.createObjectURL, so we use a data URL instead.
+  console.log('[WebTape] Generating ZIP archive…');
+  const base64 = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
+  console.log('[WebTape] ZIP generated, base64 length:', base64.length);
+
+  const dataUrl = 'data:application/zip;base64,' + base64;
+
   const now = new Date();
   const pad = (n, len = 2) => String(n).padStart(len, '0');
   const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
   const filename = `webtape_${datePart}_${timePart}.zip`;
 
+  console.log('[WebTape] Starting download:', filename);
+
   await new Promise((resolve, reject) => {
-    chrome.downloads.download({ url, filename, saveAs: false }, (downloadId) => {
-      URL.revokeObjectURL(url);
+    chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, (downloadId) => {
       if (chrome.runtime.lastError) {
+        console.error('[WebTape] Download failed:', chrome.runtime.lastError.message);
         reject(new Error(chrome.runtime.lastError.message));
       } else {
+        console.log('[WebTape] Download started, id:', downloadId);
         resolve(downloadId);
       }
     });
@@ -493,6 +515,7 @@ async function stopAndExport() {
   resetSession();
   activeTabId = null;
   recorderState = 'idle';
+  console.log('[WebTape] Export complete, session reset.');
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +555,7 @@ chrome.debugger.onDetach.addListener((source) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const { type } = message;
+  console.log('[WebTape] Message received:', type);
 
   if (type === 'GET_STATE') {
     sendResponse({
