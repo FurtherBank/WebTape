@@ -48,6 +48,50 @@ let networkIdleTimer = null;
 const NETWORK_IDLE_DELAY_MS = 1500; // ms of network silence before capturing post-action A11y
 const ACTION_WINDOW_MS = 2000;      // ms sliding window to associate requests with an action
 
+// Resource types from CDP that represent API / data requests we want to capture.
+const ALLOWED_RESOURCE_TYPES = new Set([
+  'XHR', 'Fetch', 'WebSocket', 'EventSource', 'Other',
+]);
+
+// MIME type prefixes / substrings that indicate API / data responses.
+const ALLOWED_MIME_PATTERNS = [
+  'application/json',
+  'text/json',
+  'text/plain',
+  'text/html',
+  'text/xml',
+  'application/xml',
+  'application/x-www-form-urlencoded',
+  'multipart/form-data',
+  'application/graphql',
+  'application/grpc',
+  'application/x-ndjson',
+];
+
+// URL path extensions that are definitely static resources — used as a fallback
+// when CDP does not provide a resource type.
+const STATIC_EXT_RE = /\.(?:css|js|mjs|jsx|ts|tsx|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|otf|mp4|webm|ogg|mp3|wav|map)(?:[?#]|$)/i;
+
+/**
+ * Determine whether a request should be captured based on its CDP resource
+ * type and URL.  Returns `true` for API / data requests only.
+ */
+function shouldCaptureByType(resourceType, url) {
+  if (resourceType) {
+    return ALLOWED_RESOURCE_TYPES.has(resourceType);
+  }
+  return !STATIC_EXT_RE.test(url);
+}
+
+/**
+ * Check whether a MIME type looks like an API / data response.
+ */
+function isApiMimeType(mime) {
+  if (!mime) return true; // unknown → keep to be safe
+  const lower = mime.toLowerCase();
+  return ALLOWED_MIME_PATTERNS.some((p) => lower.startsWith(p));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -146,6 +190,8 @@ function summariseA11yNodes(nodes) {
 // ---------------------------------------------------------------------------
 
 function handleRequestWillBeSent(params) {
+  if (!shouldCaptureByType(params.type, params.request.url)) return;
+
   const reqId = nextRequestId();
   /** @type {NetworkEntry} */
   const entry = {
@@ -162,14 +208,24 @@ function handleRequestWillBeSent(params) {
     endTime: null,
   };
   pendingRequests.set(params.requestId, entry);
+  console.log('[WebTape] Captured request:', params.request.method, params.request.url,
+    '(type:', params.type || 'unknown', ')');
 }
 
 function handleResponseReceived(params) {
   const entry = pendingRequests.get(params.requestId);
   if (!entry) return;
+
+  const mime = params.response.mimeType;
+  if (!isApiMimeType(mime)) {
+    console.log('[WebTape] Dropping non-API response (mime:', mime, '):', entry.url);
+    pendingRequests.delete(params.requestId);
+    return;
+  }
+
   entry.status = params.response.status;
   entry.responseHeaders = params.response.headers;
-  entry.mimeType = params.response.mimeType;
+  entry.mimeType = mime;
 }
 
 async function handleLoadingFinished(params) {
