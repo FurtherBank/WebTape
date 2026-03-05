@@ -326,7 +326,7 @@ function handleWebSocketCreated(params) {
     status: null,
     responseHeaders: null,
     responseBody: null,
-    startTime: Date.now() / 1000, // CDP-style seconds since epoch
+    startTime: Date.now() / 1000, // Network.webSocketCreated does not carry a CDP timestamp
     endTime: null,
     wsMessages: [],
   };
@@ -648,25 +648,19 @@ async function stopAndExport() {
   console.log('[WebTape] Building ZIP — timeline blocks:', timeline.length,
     ', completed requests:', completedRequests.size);
 
-  // Finalise any still-open SSE streams (connection was alive when recording stopped)
-  for (const [cdpId, entry] of pendingRequests) {
-    if (entry.entryType === 'sse') {
+  // Finalise any still-open SSE streams and WebSocket connections
+  const finalizeOpenEntries = (sourceMap, filterFn) => {
+    for (const [cdpId, entry] of sourceMap) {
+      if (filterFn && !filterFn(entry)) continue;
       entry.endTime = Date.now() / 1000;
-      pendingRequests.delete(cdpId);
+      sourceMap.delete(cdpId);
       completedRequests.set(cdpId, entry);
-      console.log('[WebTape] Finalised open SSE stream:', entry.url,
-        '— events:', entry.sseEvents ? entry.sseEvents.length : 0);
+      console.log(`[WebTape] Finalised open ${entry.entryType}:`, entry.url);
     }
-  }
+  };
 
-  // Finalise any still-open WebSocket connections
-  for (const [cdpId, entry] of pendingWebSockets) {
-    entry.endTime = Date.now() / 1000;
-    pendingWebSockets.delete(cdpId);
-    completedRequests.set(cdpId, entry);
-    console.log('[WebTape] Finalised open WebSocket:', entry.url,
-      '— messages:', entry.wsMessages ? entry.wsMessages.length : 0);
-  }
+  finalizeOpenEntries(pendingRequests, (e) => e.entryType === 'sse');
+  finalizeOpenEntries(pendingWebSockets);
 
   const zip = new JSZip();
   const allRequests = [...completedRequests.values()];
