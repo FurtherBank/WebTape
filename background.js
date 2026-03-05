@@ -725,87 +725,86 @@ async function stopAndExport() {
     responsesData[`${entry.reqId}_res.json`] = resPayload;
   }
 
-  if (exportMode === 'webhook') {
-    // Webhook: send full data as JSON POST
-    const webhookUrlStr = (settings.webhookUrl || '').trim();
-    if (!webhookUrlStr) {
-      recorderState = 'idle';
-      throw new Error('Webhook URL is not configured.');
-    }
+  try {
+    if (exportMode === 'webhook') {
+      // Webhook: send full data as JSON POST
+      const webhookUrlStr = (settings.webhookUrl || '').trim();
+      if (!webhookUrlStr) {
+        throw new Error('Webhook URL is not configured.');
+      }
 
-    const now = new Date();
-    const payload = {
-      meta: {
-        timestamp: now.toISOString(),
-        epoch: now.getTime(),
-        version: chrome.runtime.getManifest().version,
-        source: 'WebTape',
-      },
-      content: {
-        'index.json': indexData,
-        requests: requestsData,
-        responses: responsesData,
-      },
-    };
+      const now = new Date();
+      const payload = {
+        meta: {
+          timestamp: now.toISOString(),
+          epoch: now.getTime(),
+          version: chrome.runtime.getManifest().version,
+          source: 'WebTape',
+        },
+        content: {
+          'index.json': indexData,
+          requests: requestsData,
+          responses: responsesData,
+        },
+      };
 
-    console.log('[WebTape] Sending webhook to:', webhookUrlStr);
-    let resp;
-    try {
-      resp = await fetch(webhookUrlStr, {
+      console.log('[WebTape] Sending webhook to:', webhookUrlStr);
+      const resp = await fetch(webhookUrlStr, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-    } catch (fetchErr) {
-      recorderState = 'idle';
-      throw new Error('Webhook request failed: ' + fetchErr.message);
-    }
 
-    if (!resp.ok) {
-      recorderState = 'idle';
-      throw new Error(`Webhook request failed: ${resp.status} ${resp.statusText}`);
-    }
-    console.log('[WebTape] Webhook sent successfully, status:', resp.status);
-  } else {
-    // Download: build ZIP and trigger download
-    const zip = new JSZip();
-    zip.file('index.json', JSON.stringify(indexData, null, 2));
+      if (!resp.ok) {
+        throw new Error(`Webhook request failed: ${resp.status} ${resp.statusText}`);
+      }
+      console.log('[WebTape] Webhook sent successfully, status:', resp.status);
+    } else {
+      // Download: build ZIP and trigger download
+      const zip = new JSZip();
+      zip.file('index.json', JSON.stringify(indexData, null, 2));
 
-    const reqFolder = zip.folder('requests');
-    const resFolder = zip.folder('responses');
+      const reqFolder = zip.folder('requests');
+      const resFolder = zip.folder('responses');
 
-    for (const [filename, data] of Object.entries(requestsData)) {
-      reqFolder.file(filename, JSON.stringify(data, null, 2));
-    }
-    for (const [filename, data] of Object.entries(responsesData)) {
-      resFolder.file(filename, JSON.stringify(data, null, 2));
-    }
+      for (const [filename, data] of Object.entries(requestsData)) {
+        reqFolder.file(filename, JSON.stringify(data, null, 2));
+      }
+      for (const [filename, data] of Object.entries(responsesData)) {
+        resFolder.file(filename, JSON.stringify(data, null, 2));
+      }
 
-    console.log('[WebTape] Generating ZIP archive…');
-    const base64 = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
-    console.log('[WebTape] ZIP generated, base64 length:', base64.length);
+      console.log('[WebTape] Generating ZIP archive…');
+      const base64 = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
+      console.log('[WebTape] ZIP generated, base64 length:', base64.length);
 
-    const dataUrl = 'data:application/zip;base64,' + base64;
+      const dataUrl = 'data:application/zip;base64,' + base64;
 
-    const now = new Date();
-    const pad = (n, len = 2) => String(n).padStart(len, '0');
-    const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-    const filename = `webtape_${datePart}_${timePart}.zip`;
+      const now = new Date();
+      const pad = (n, len = 2) => String(n).padStart(len, '0');
+      const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+      const filename = `webtape_${datePart}_${timePart}.zip`;
 
-    console.log('[WebTape] Starting download:', filename);
+      console.log('[WebTape] Starting download:', filename);
 
-    await new Promise((resolve, reject) => {
-      chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-          console.error('[WebTape] Download failed:', chrome.runtime.lastError.message);
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          console.log('[WebTape] Download started, id:', downloadId);
-          resolve(downloadId);
-        }
+      await new Promise((resolve, reject) => {
+        chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.error('[WebTape] Download failed:', chrome.runtime.lastError.message);
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            console.log('[WebTape] Download started, id:', downloadId);
+            resolve(downloadId);
+          }
+        });
       });
-    });
+    }
+  } catch (err) {
+    resetSession();
+    activeTabId = null;
+    recorderState = 'idle';
+    throw err;
   }
 
   resetSession();
