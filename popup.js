@@ -9,6 +9,12 @@ const statActions = document.getElementById('statActions');
 const statRequests = document.getElementById('statRequests');
 const statContexts = document.getElementById('statContexts');
 const messageEl = document.getElementById('message');
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsBody = document.getElementById('settingsBody');
+const settingsArrow = document.getElementById('settingsArrow');
+const exportMode = document.getElementById('exportMode');
+const webhookRow = document.getElementById('webhookRow');
+const webhookUrl = document.getElementById('webhookUrl');
 
 let statsInterval = null;
 
@@ -122,7 +128,11 @@ btnStop.addEventListener('click', async () => {
     setStatus('idle', 'Idle');
     setRecordingUI(false);
     refreshStats();
-    setMessage('Export complete! ZIP downloaded.', 'success');
+    if (resp.exportMode === 'webhook') {
+      setMessage('Export complete! Data sent via webhook.', 'success');
+    } else {
+      setMessage('Export complete! ZIP downloaded.', 'success');
+    }
   });
 });
 
@@ -147,4 +157,44 @@ chrome.runtime.sendMessage({ type: 'GET_STATE' }, (resp) => {
     statRequests.textContent = resp.stats.requests || 0;
     statContexts.textContent = resp.stats.contexts || 0;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+function updateWebhookRowVisibility() {
+  webhookRow.style.display = exportMode.value === 'webhook' ? '' : 'none';
+}
+
+function saveSettings() {
+  const settings = {
+    exportMode: exportMode.value,
+    webhookUrl: webhookUrl.value.trim(),
+  };
+  chrome.storage.local.set({ webtapeSettings: settings });
+}
+
+settingsToggle.addEventListener('click', () => {
+  const isHidden = settingsBody.style.display === 'none';
+  settingsBody.style.display = isHidden ? '' : 'none';
+  settingsArrow.classList.toggle('open', isHidden);
+});
+
+exportMode.addEventListener('change', () => {
+  updateWebhookRowVisibility();
+  saveSettings();
+});
+
+webhookUrl.addEventListener('input', () => {
+  saveSettings();
+});
+
+// Load persisted settings
+chrome.storage.local.get('webtapeSettings', (result) => {
+  const s = result.webtapeSettings;
+  if (!s) return;
+  if (s.exportMode) exportMode.value = s.exportMode;
+  if (s.webhookUrl) webhookUrl.value = s.webhookUrl;
+  updateWebhookRowVisibility();
 });

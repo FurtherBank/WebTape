@@ -51,6 +51,27 @@
       </div>
     </div>
 
+    <div class="settings">
+      <div class="settings-header" id="settingsToggle">
+        <span class="settings-icon">&#9881;</span>
+        <span>Export Settings</span>
+        <span class="settings-arrow" id="settingsArrow">&#9662;</span>
+      </div>
+      <div class="settings-body" id="settingsBody" style="display:none;">
+        <div class="setting-row">
+          <label class="setting-label" for="exportMode">Export mode</label>
+          <select id="exportMode" class="setting-select">
+            <option value="download">Download ZIP</option>
+            <option value="webhook">Webhook</option>
+          </select>
+        </div>
+        <div class="setting-row" id="webhookRow" style="display:none;">
+          <label class="setting-label" for="webhookUrl">Webhook URL</label>
+          <input type="url" id="webhookUrl" class="setting-input" placeholder="https://example.com/webhook">
+        </div>
+      </div>
+    </div>
+
     <div class="message" id="message"></div>
   </div>
   <script src="popup.js"></script>

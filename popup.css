@@ -192,3 +192,76 @@ body {
 .message.success {
   color: #2ecc71;
 }
+
+.settings {
+  background: #16213e;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c0c0d0;
+  user-select: none;
+}
+
+.settings-header:hover {
+  background: #1a2744;
+}
+
+.settings-icon {
+  font-size: 14px;
+}
+
+.settings-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.settings-arrow.open {
+  transform: rotate(180deg);
+}
+
+.settings-body {
+  padding: 0 12px 10px;
+}
+
+.setting-row {
+  margin-top: 8px;
+}
+
+.setting-label {
+  display: block;
+  font-size: 11px;
+  color: #8a8aaa;
+  margin-bottom: 4px;
+}
+
+.setting-select,
+.setting-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #2a2a4a;
+  border-radius: 6px;
+  background: #0f1629;
+  color: #e0e0e0;
+  font-size: 12px;
+  outline: none;
+}
+
+.setting-select:focus,
+.setting-input:focus {
+  border-color: #2563eb;
+}
+
+.setting-input::placeholder {
+  color: #555577;
+}
