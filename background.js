@@ -31,6 +31,12 @@ const pendingRequests = new Map();
 const completedRequests = new Map();
 
 /**
+ * Map of CDP requestId -> pending WebSocket entry (accumulating frames).
+ * @type {Map<string, NetworkEntry>}
+ */
+const pendingWebSockets = new Map();
+
+/**
  * Queue of pending user actions waiting for their sliding-window to close.
  * @type {Array<PendingAction>}
  */
@@ -66,6 +72,7 @@ const ALLOWED_MIME_PATTERNS = [
   'application/graphql',
   'application/grpc',
   'application/x-ndjson',
+  'text/event-stream',
 ];
 
 // URL path extensions that are definitely static resources — used as a fallback
@@ -108,6 +115,7 @@ function resetSession() {
   timeline.length = 0;
   pendingRequests.clear();
   completedRequests.clear();
+  pendingWebSockets.clear();
   pendingActions.length = 0;
   contextCounter = 0;
   requestCounter = 0;
@@ -197,6 +205,7 @@ function handleRequestWillBeSent(params) {
   const entry = {
     reqId,
     cdpRequestId: params.requestId,
+    entryType: 'http',
     method: params.request.method,
     url: params.request.url,
     requestHeaders: params.request.headers,
@@ -226,6 +235,35 @@ function handleResponseReceived(params) {
   entry.status = params.response.status;
   entry.responseHeaders = params.response.headers;
   entry.mimeType = mime;
+
+  // Mark SSE streams so we accumulate events instead of fetching the body
+  if (mime && mime.toLowerCase().startsWith('text/event-stream')) {
+    entry.entryType = 'sse';
+    entry.sseEvents = [];
+    console.log('[WebTape] SSE stream detected:', entry.url);
+  }
+}
+
+/**
+ * Handle an individual SSE event received on an EventSource stream.
+ * CDP fires this for each SSE message while the connection is open.
+ */
+function handleEventSourceMessageReceived(params) {
+  const entry = pendingRequests.get(params.requestId);
+  if (!entry) return;
+
+  // Ensure the entry is marked as SSE (in case responseReceived hasn't fired yet)
+  if (entry.entryType !== 'sse') {
+    entry.entryType = 'sse';
+    entry.sseEvents = entry.sseEvents || [];
+  }
+
+  entry.sseEvents.push({
+    timestamp: params.timestamp,
+    event: params.eventName || 'message',
+    id: params.eventId || '',
+    data: params.data || '',
+  });
 }
 
 async function handleLoadingFinished(params) {
@@ -233,7 +271,18 @@ async function handleLoadingFinished(params) {
   if (!entry) return;
   entry.endTime = params.timestamp;
 
-  // Fetch response body
+  // For SSE entries, the body is the accumulated events — skip CDP body fetch
+  if (entry.entryType === 'sse') {
+    pendingRequests.delete(params.requestId);
+    completedRequests.set(params.requestId, entry);
+    associateRequestWithActions(entry);
+    scheduleNetworkIdleCheck();
+    console.log('[WebTape] SSE stream completed:', entry.url,
+      '— events:', entry.sseEvents ? entry.sseEvents.length : 0);
+    return;
+  }
+
+  // Fetch response body for regular HTTP requests
   try {
     const bodyResult = await cdpSend('Network.getResponseBody', { requestId: params.requestId });
     if (bodyResult) {
@@ -256,6 +305,102 @@ async function handleLoadingFinished(params) {
 }
 
 // ---------------------------------------------------------------------------
+// WebSocket Event Handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * A new WebSocket connection has been created.
+ * CDP fires this before the HTTP upgrade handshake.
+ */
+function handleWebSocketCreated(params) {
+  const reqId = nextRequestId();
+  /** @type {NetworkEntry} */
+  const entry = {
+    reqId,
+    cdpRequestId: params.requestId,
+    entryType: 'websocket',
+    method: 'GET',  // WebSocket upgrade is always GET
+    url: params.url,
+    requestHeaders: null,
+    requestBody: null,
+    status: null,
+    responseHeaders: null,
+    responseBody: null,
+    startTime: Date.now() / 1000, // Network.webSocketCreated does not carry a CDP timestamp
+    endTime: null,
+    wsMessages: [],
+  };
+  pendingWebSockets.set(params.requestId, entry);
+  console.log('[WebTape] WebSocket created:', params.url);
+}
+
+/**
+ * The WebSocket handshake response has been received from the server.
+ */
+function handleWebSocketHandshakeResponseReceived(params) {
+  const entry = pendingWebSockets.get(params.requestId);
+  if (!entry) return;
+
+  const resp = params.response || {};
+  entry.status = resp.status || 101;
+  entry.responseHeaders = resp.headers || null;
+  entry.requestHeaders = resp.requestHeaders || entry.requestHeaders;
+}
+
+/**
+ * A WebSocket frame has been sent by the client.
+ */
+function handleWebSocketFrameSent(params) {
+  const entry = pendingWebSockets.get(params.requestId);
+  if (!entry) return;
+
+  const frame = params.response || {};
+  entry.wsMessages.push({
+    timestamp: params.timestamp,
+    direction: 'sent',
+    opcode: frame.opcode || 1,
+    data: frame.payloadData || '',
+  });
+}
+
+/**
+ * A WebSocket frame has been received from the server.
+ */
+function handleWebSocketFrameReceived(params) {
+  const entry = pendingWebSockets.get(params.requestId);
+  if (!entry) return;
+
+  const frame = params.response || {};
+  entry.wsMessages.push({
+    timestamp: params.timestamp,
+    direction: 'received',
+    opcode: frame.opcode || 1,
+    data: frame.payloadData || '',
+  });
+}
+
+/**
+ * The WebSocket connection has been closed.
+ */
+function handleWebSocketClosed(params) {
+  const entry = pendingWebSockets.get(params.requestId);
+  if (!entry) return;
+
+  entry.endTime = params.timestamp;
+  pendingWebSockets.delete(params.requestId);
+  completedRequests.set(params.requestId, entry);
+
+  // Associate with open action windows
+  associateRequestWithActions(entry);
+
+  // Reset the network-idle timer
+  scheduleNetworkIdleCheck();
+
+  console.log('[WebTape] WebSocket closed:', entry.url,
+    '— messages:', entry.wsMessages.length);
+}
+
+// ---------------------------------------------------------------------------
 // Sliding Window Context Aggregation
 // ---------------------------------------------------------------------------
 
@@ -263,6 +408,7 @@ async function handleLoadingFinished(params) {
  * @typedef {Object} NetworkEntry
  * @property {string} reqId
  * @property {string} cdpRequestId
+ * @property {'http'|'sse'|'websocket'} entryType
  * @property {string} method
  * @property {string} url
  * @property {Object} requestHeaders
@@ -273,6 +419,8 @@ async function handleLoadingFinished(params) {
  * @property {string|null} mimeType
  * @property {number} startTime
  * @property {number|null} endTime
+ * @property {Array<{timestamp:number, event:string, id:string, data:string}>} [sseEvents]
+ * @property {Array<{timestamp:number, direction:'sent'|'received', opcode:number, data:string}>} [wsMessages]
  */
 
 /**
@@ -365,16 +513,18 @@ async function finaliseAction(pendingAction, block) {
 }
 
 function toNetworkSummary(entry) {
-  return {
+  const summary = {
     req_id: entry.reqId,
     method: entry.method,
     url: entry.url,
     status: entry.status,
+    type: entry.entryType || 'http',
     detail_path: {
       request: `requests/${entry.reqId}_body.json`,
       response: `responses/${entry.reqId}_res.json`,
     },
   };
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +648,20 @@ async function stopAndExport() {
   console.log('[WebTape] Building ZIP — timeline blocks:', timeline.length,
     ', completed requests:', completedRequests.size);
 
+  // Finalise any still-open SSE streams and WebSocket connections
+  const finalizeOpenEntries = (sourceMap, filterFn) => {
+    for (const [cdpId, entry] of sourceMap) {
+      if (filterFn && !filterFn(entry)) continue;
+      entry.endTime = Date.now() / 1000;
+      sourceMap.delete(cdpId);
+      completedRequests.set(cdpId, entry);
+      console.log(`[WebTape] Finalised open ${entry.entryType}:`, entry.url);
+    }
+  };
+
+  finalizeOpenEntries(pendingRequests, (e) => e.entryType === 'sse');
+  finalizeOpenEntries(pendingWebSockets);
+
   const zip = new JSZip();
   const allRequests = [...completedRequests.values()];
 
@@ -527,6 +691,7 @@ async function stopAndExport() {
   for (const entry of allRequests) {
     const reqPayload = {
       req_id: entry.reqId,
+      type: entry.entryType || 'http',
       method: entry.method,
       url: entry.url,
       headers: entry.requestHeaders,
@@ -534,13 +699,26 @@ async function stopAndExport() {
     };
     reqFolder.file(`${entry.reqId}_body.json`, JSON.stringify(reqPayload, null, 2));
 
+    // Build response payload based on entry type
     const resPayload = {
       req_id: entry.reqId,
+      type: entry.entryType || 'http',
       status: entry.status,
       headers: entry.responseHeaders,
       mime_type: entry.mimeType,
-      body: entry.responseBody,
     };
+
+    if (entry.entryType === 'sse') {
+      // SSE: store the accumulated events as the body
+      resPayload.body = entry.sseEvents || [];
+    } else if (entry.entryType === 'websocket') {
+      // WebSocket: store the message log as the body
+      resPayload.body = entry.wsMessages || [];
+    } else {
+      // Regular HTTP: store the response body string
+      resPayload.body = entry.responseBody;
+    }
+
     resFolder.file(`${entry.reqId}_res.json`, JSON.stringify(resPayload, null, 2));
   }
 
@@ -595,6 +773,29 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
     case 'Network.loadingFinished':
       handleLoadingFinished(params);
       break;
+
+    // SSE events
+    case 'Network.eventSourceMessageReceived':
+      handleEventSourceMessageReceived(params);
+      break;
+
+    // WebSocket events
+    case 'Network.webSocketCreated':
+      handleWebSocketCreated(params);
+      break;
+    case 'Network.webSocketHandshakeResponseReceived':
+      handleWebSocketHandshakeResponseReceived(params);
+      break;
+    case 'Network.webSocketFrameSent':
+      handleWebSocketFrameSent(params);
+      break;
+    case 'Network.webSocketFrameReceived':
+      handleWebSocketFrameReceived(params);
+      break;
+    case 'Network.webSocketClosed':
+      handleWebSocketClosed(params);
+      break;
+
     default:
       break;
   }
@@ -622,7 +823,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       state: recorderState,
       stats: {
         actions: timeline.filter((b) => b.action).length,
-        requests: completedRequests.size,
+        requests: completedRequests.size + pendingWebSockets.size,
         contexts: timeline.length,
       },
     });
@@ -632,7 +833,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === 'GET_STATS') {
     sendResponse({
       actions: timeline.filter((b) => b.action).length,
-      requests: completedRequests.size,
+      requests: completedRequests.size + pendingWebSockets.size,
       contexts: timeline.length,
     });
     return false;

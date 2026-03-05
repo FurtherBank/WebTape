@@ -10,6 +10,8 @@ A Chrome Extension (Manifest V3) that silently records user interactions, networ
 - **A11y-powered DOM** — uses Chrome's Accessibility Tree instead of raw HTML to minimise token usage.
 - **Sliding-window request attribution** — automatically associates network calls with the user action that triggered them.
 - **Hierarchical ZIP** — `index.json` (skeleton + A11y summaries) + `requests/` + `responses/` folders.
+- **SSE (Server-Sent Events) capture** — captures individual SSE events with timestamps, event names, IDs, and data via CDP `Network.eventSourceMessageReceived`.
+- **WebSocket capture** — captures WebSocket handshake, sent/received frames, and connection lifecycle via CDP WebSocket events.
 
 ## ZIP Output Structure
 
@@ -21,6 +23,51 @@ webtape_<timestamp>.zip
 │   └── req_0001_<ts>_body.json
 └── responses/              # Level 2 – full response bodies (by req_id)
     └── req_0001_<ts>_res.json
+```
+
+### Response Format by Type
+
+Each response file includes a `type` field indicating the protocol used:
+
+**HTTP** (`type: "http"`):
+```json
+{
+  "req_id": "req_0001_...",
+  "type": "http",
+  "status": 200,
+  "headers": { ... },
+  "mime_type": "application/json",
+  "body": "{ \"key\": \"value\" }"
+}
+```
+
+**SSE** (`type: "sse"`):
+```json
+{
+  "req_id": "req_0002_...",
+  "type": "sse",
+  "status": 200,
+  "headers": { ... },
+  "mime_type": "text/event-stream",
+  "body": [
+    { "timestamp": 1705333845.123, "event": "message", "id": "1", "data": "..." },
+    { "timestamp": 1705333845.456, "event": "update", "id": "2", "data": "..." }
+  ]
+}
+```
+
+**WebSocket** (`type: "websocket"`):
+```json
+{
+  "req_id": "req_0003_...",
+  "type": "websocket",
+  "status": 101,
+  "headers": { ... },
+  "body": [
+    { "timestamp": 1705333845.123, "direction": "sent", "opcode": 1, "data": "..." },
+    { "timestamp": 1705333845.456, "direction": "received", "opcode": 1, "data": "..." }
+  ]
+}
 ```
 
 ## Installation
