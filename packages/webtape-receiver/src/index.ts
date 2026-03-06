@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { relative } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -8,7 +9,7 @@ import { createWebhookServer } from './server.js';
 import { listRecordings } from './storage.js';
 import { analyzeRecording, generatePromptFile } from './analyzer.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 const program = new Command();
 
@@ -24,7 +25,7 @@ program
   .description('启动 webhook 接收服务器')
   .option('-p, --port <number>', '监听端口', '5643')
   .option('-w, --workspace <path>', '工作区路径（默认 ~/Desktop/WebTape）')
-  .option('--auto-analyze', '接收数据后自动运行 AI 分析', false)
+  .option('--no-auto-analyze', '接收数据后不自动运行 AI 分析')
   .option('--backend <name>', 'AI 分析后端（cursor）', 'cursor')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
@@ -55,11 +56,20 @@ program
         console.log(`    ${chalk.gray('会话')}    ${sessionDir}`);
         console.log(`    ${chalk.gray('操作数')}  ${actions}`);
         console.log(`    ${chalk.gray('请求数')}  ${requests}`);
+        if (opts.autoAnalyze) {
+          console.log('');
+          console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…'));
+        }
       },
       onAnalyzeDone(reportPath) {
+        const relativePath = relative(workspace.root, reportPath);
+        const isInsideWorkspace = !relativePath.startsWith('..');
         console.log('');
         console.log(chalk.green('  ✓ AI 分析完成'));
-        console.log(`    ${chalk.gray('报告')} ${reportPath}`);
+        if (isInsideWorkspace) {
+          console.log(`    ${chalk.gray('产物位置')} ${relativePath}`);
+        }
+        console.log(`    ${chalk.gray('完整路径')} ${reportPath}`);
       },
       onError(err) {
         console.error('');
