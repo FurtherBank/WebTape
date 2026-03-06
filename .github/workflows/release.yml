@@ -1,4 +1,4 @@
-name: Package and Release
+name: Release Extension
 
 on:
   push:
@@ -9,8 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  release-extension:
     runs-on: ubuntu-latest
+    # Only run when the tag is on main
+    if: github.ref_type == 'tag'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,5 +34,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: dist/webtape-*.zip
           generate_release_notes: true

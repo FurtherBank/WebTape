@@ -1,0 +1,67 @@
+/**
+ * Webhook payload sent by the WebTape Chrome extension (background.js).
+ */
+export interface WebTapePayload {
+  meta: {
+    timestamp: string;
+    epoch: number;
+    version: string;
+    source: string;
+  };
+  content: {
+    'index.json': ContextBlock[];
+    requests: Record<string, RequestEntry>;
+    responses: Record<string, ResponseEntry>;
+  };
+}
+
+export interface ContextBlock {
+  context_id: string;
+  timestamp: number;
+  state?: {
+    type: string;
+    url: string;
+    title: string;
+    fav_icon_url: string;
+    a11y_tree_summary: string;
+  };
+  action?: {
+    type: string;
+    target_element: string;
+    tag: string;
+    id: string;
+    aria_label: string;
+  };
+  triggered_network?: NetworkSummary[] | null;
+  post_action_a11y_tree_summary?: string | null;
+}
+
+export interface NetworkSummary {
+  req_id: string;
+  method: string;
+  url: string;
+  status: number | null;
+  type: 'http' | 'sse' | 'websocket';
+  detail_path: {
+    request: string;
+    response: string;
+  };
+}
+
+export interface RequestEntry {
+  req_id: string;
+  type: 'http' | 'sse' | 'websocket';
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+}
+
+export interface ResponseEntry {
+  req_id: string;
+  type: 'http' | 'sse' | 'websocket';
+  status: number | null;
+  headers: Record<string, string> | null;
+  mime_type?: string;
+  body: string | object | null;
+}

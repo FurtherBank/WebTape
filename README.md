@@ -125,4 +125,57 @@ lib/
   jszip.min.js     Bundled JSZip library
 icons/
   icon{16,32,48,128}.png  Extension icons
+packages/
+  webtape-receiver/      CLI webhook receiver & AI analyzer
 ```
+
+## WebTape Receiver (CLI)
+
+`webtape-receiver` 是一个命令行工具，用于接收 WebTape 插件通过 webhook 发送的录制数据，并借助 AI 工具分析网页业务逻辑的完整接口链路。
+
+### 安装
+
+```bash
+cd packages/webtape-receiver
+npm install
+npm run build
+```
+
+### 使用
+
+**启动服务器**（默认在 `~/Desktop/WebTape` 创建工作区，监听 5643 端口）：
+
+```bash
+npx webtape-receiver serve
+```
+
+在 WebTape 插件设置中将导出模式改为 Webhook，URL 填写 `http://localhost:5643/webhook`。
+
+**列出录制会话**：
+
+```bash
+npx webtape-receiver list
+```
+
+**AI 分析**（通过 Cursor Agent）：
+
+```bash
+npx webtape-receiver analyze <session-name>
+```
+
+仅生成提示词文件（手动粘贴到 Cursor Chat）：
+
+```bash
+npx webtape-receiver analyze <session-name> --prompt-only
+```
+
+### CLI 选项
+
+| 命令 | 选项 | 说明 |
+|------|------|------|
+| `serve` | `-p, --port` | 监听端口（默认 5643） |
+| `serve` | `-w, --workspace` | 工作区路径 |
+| `serve` | `--auto-analyze` | 接收数据后自动运行 AI 分析 |
+| `serve` | `--backend` | AI 后端（目前支持 `cursor`） |
+| `analyze` | `--prompt-only` | 仅生成提示词文件 |
+| `analyze` | `--backend` | AI 后端 |
