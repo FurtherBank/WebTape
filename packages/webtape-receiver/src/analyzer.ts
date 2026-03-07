@@ -33,7 +33,7 @@ const ANALYSIS_PROMPT_TEMPLATE = `你是一个专业的 Web 前端业务分析�
 /**
  * Build the analysis prompt from a recording session.
  */
-function buildPrompt(sessionDir: string): string {
+export function buildPrompt(sessionDir: string): string {
   const indexPath = join(sessionDir, 'index.json');
   if (!existsSync(indexPath)) {
     throw new Error(`index.json not found in ${sessionDir}`);
@@ -51,6 +51,7 @@ export interface AnalyzeOptions {
   backend: AnalyzerBackend;
   workspace: WorkspacePaths;
   sessionDir: string;
+  model?: string;
 }
 
 /**
@@ -58,14 +59,20 @@ export interface AnalyzeOptions {
  * Returns the path to the generated analysis report.
  */
 export async function analyzeRecording(opts: AnalyzeOptions): Promise<string> {
-  const { backend, workspace, sessionDir } = opts;
+  const { backend, workspace, sessionDir, model } = opts;
 
   const sessionName = sessionDir.split('/').pop() || 'unknown';
   const reportPath = join(workspace.analyses, `${sessionName}.md`);
-  const prompt = buildPrompt(sessionDir);
+
+  // Ensure prompt.md exists in the session directory (backward compatibility)
+  const promptPath = join(sessionDir, 'prompt.md');
+  if (!existsSync(promptPath)) {
+    const prompt = buildPrompt(sessionDir);
+    writeFileSync(promptPath, prompt, 'utf-8');
+  }
 
   if (backend === 'cursor') {
-    return analyzeByCursor(prompt, sessionDir, reportPath);
+    return analyzeByCursor(sessionDir, reportPath, model);
   }
 
   throw new Error(`Unsupported analyzer backend: ${backend}`);
@@ -73,21 +80,25 @@ export async function analyzeRecording(opts: AnalyzeOptions): Promise<string> {
 
 /**
  * Analyze via `cursor agent` CLI.
- * Writes the prompt to a temp file and invokes cursor in agent mode.
+ * The prompt is read from prompt.md in the session directory.
+ * Command: cursor agent prompt "<instruction>" --model "<model>"
  */
 async function analyzeByCursor(
-  prompt: string,
   sessionDir: string,
   reportPath: string,
+  model?: string,
 ): Promise<string> {
-  const promptPath = join(sessionDir, '.analysis_prompt.md');
-  writeFileSync(promptPath, prompt, 'utf-8');
+  const instruction = '请阅读当前目录下的 prompt.md 文件，按照其中的指示完成分析任务，并将分析报告输出为 Markdown 格式。';
 
   return new Promise<string>((resolve, reject) => {
     const args = [
       'agent',
-      '--message', prompt,
+      'prompt', instruction,
     ];
+
+    if (model) {
+      args.push('--model', model);
+    }
 
     const child = execFile('cursor', args, {
       cwd: sessionDir,
@@ -117,14 +128,14 @@ async function analyzeByCursor(
 }
 
 /**
- * Generate a standalone prompt file for manual use (e.g. paste into Cursor chat).
+ * Generate (or refresh) the prompt.md file inside the session directory
+ * for manual use (e.g. paste into Cursor chat).
  */
 export function generatePromptFile(
-  workspace: WorkspacePaths,
+  _workspace: WorkspacePaths,
   sessionDir: string,
 ): string {
-  const sessionName = sessionDir.split('/').pop() || 'unknown';
-  const promptPath = join(workspace.analyses, `${sessionName}_prompt.md`);
+  const promptPath = join(sessionDir, 'prompt.md');
   const prompt = buildPrompt(sessionDir);
   writeFileSync(promptPath, prompt, 'utf-8');
   return promptPath;

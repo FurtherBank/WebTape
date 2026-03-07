@@ -9,6 +9,7 @@ export interface ServerOptions {
   workspace: WorkspacePaths;
   autoAnalyze: boolean;
   analyzerBackend: AnalyzerBackend;
+  analyzerModel?: string;
   onReceive?: (sessionDir: string, payload: WebTapePayload) => void;
   onAnalyzeDone?: (reportPath: string) => void;
   onError?: (err: Error) => void;
@@ -46,7 +47,7 @@ function handleCors(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 export function createWebhookServer(opts: ServerOptions) {
-  const { port, workspace, autoAnalyze, analyzerBackend, onReceive, onAnalyzeDone, onError } = opts;
+  const { port, workspace, autoAnalyze, analyzerBackend, analyzerModel, onReceive, onAnalyzeDone, onError } = opts;
 
   const server = createServer(async (req, res) => {
     if (handleCors(req, res)) return;
@@ -76,7 +77,7 @@ export function createWebhookServer(opts: ServerOptions) {
         onReceive?.(sessionDir, payload);
 
         if (autoAnalyze) {
-          runAnalysis(workspace, sessionDir, analyzerBackend, onAnalyzeDone, onError);
+          runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeDone, onError);
         }
 
         json(res, 200, {
@@ -97,7 +98,7 @@ export function createWebhookServer(opts: ServerOptions) {
       const sessionName = req.url.slice('/analyze/'.length);
       const sessionDir = `${workspace.recordings}/${sessionName}`;
       try {
-        runAnalysis(workspace, sessionDir, analyzerBackend, onAnalyzeDone, onError);
+        runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeDone, onError);
         json(res, 200, { status: 'analysis_started', session: sessionDir });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -140,10 +141,11 @@ function runAnalysis(
   workspace: WorkspacePaths,
   sessionDir: string,
   backend: AnalyzerBackend,
+  model: string | undefined,
   onDone?: (reportPath: string) => void,
   onError?: (err: Error) => void,
 ) {
-  analyzeRecording({ backend, workspace, sessionDir })
+  analyzeRecording({ backend, workspace, sessionDir, model })
     .then((reportPath) => onDone?.(reportPath))
     .catch((err) => onError?.(err instanceof Error ? err : new Error(String(err))));
 }

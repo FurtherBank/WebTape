@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
 import type { WebTapePayload } from './types.js';
+import { buildPrompt } from './analyzer.js';
 
 /**
  * Build a human-readable session directory name from the payload metadata.
@@ -72,6 +73,10 @@ export function saveRecording(
     JSON.stringify(payload.meta, null, 2),
     'utf-8',
   );
+
+  // Build and save the analysis prompt alongside the recording data
+  const prompt = buildPrompt(sessionDir);
+  writeFileSync(join(sessionDir, 'prompt.md'), prompt, 'utf-8');
 
   return sessionDir;
 }
