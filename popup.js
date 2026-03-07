@@ -192,9 +192,8 @@ webhookUrl.addEventListener('input', () => {
 
 // Load persisted settings
 chrome.storage.local.get('webtapeSettings', (result) => {
-  const s = result.webtapeSettings;
-  if (!s) return;
+  const s = result.webtapeSettings || {};
   if (s.exportMode) exportMode.value = s.exportMode;
-  if (s.webhookUrl) webhookUrl.value = s.webhookUrl;
+  webhookUrl.value = s.webhookUrl || 'http://localhost:5643/webhook';
   updateWebhookRowVisibility();
 });
