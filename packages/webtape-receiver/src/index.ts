@@ -9,7 +9,7 @@ import { createWebhookServer } from './server.js';
 import { listRecordings } from './storage.js';
 import { analyzeRecording, generatePromptFile } from './analyzer.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 const program = new Command();
 
