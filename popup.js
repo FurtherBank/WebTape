@@ -190,10 +190,13 @@ webhookUrl.addEventListener('input', () => {
   saveSettings();
 });
 
-// Load persisted settings
+// Load persisted settings (and persist resolved defaults so background.js reads
+// consistent values even if the user never interacts with the settings panel).
 chrome.storage.local.get('webtapeSettings', (result) => {
   const s = result.webtapeSettings || {};
-  if (s.exportMode) exportMode.value = s.exportMode;
+  exportMode.value = s.exportMode || 'download';
   webhookUrl.value = s.webhookUrl || 'http://localhost:5643/webhook';
   updateWebhookRowVisibility();
+  // Always persist so that background.js has the resolved values in storage
+  saveSettings();
 });
