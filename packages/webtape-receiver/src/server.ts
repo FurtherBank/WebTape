@@ -112,7 +112,7 @@ export function createWebhookServer(opts: ServerOptions) {
       const sessionName = req.url.slice('/prompt/'.length);
       const sessionDir = `${workspace.recordings}/${sessionName}`;
       try {
-        const promptPath = generatePromptFile(workspace, sessionDir);
+        const promptPath = generatePromptFile(sessionDir);
         json(res, 200, { status: 'prompt_generated', path: promptPath });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

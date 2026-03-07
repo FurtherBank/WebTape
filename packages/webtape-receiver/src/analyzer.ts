@@ -132,7 +132,6 @@ async function analyzeByCursor(
  * for manual use (e.g. paste into Cursor chat).
  */
 export function generatePromptFile(
-  _workspace: WorkspacePaths,
   sessionDir: string,
 ): string {
   const promptPath = join(sessionDir, 'prompt.md');

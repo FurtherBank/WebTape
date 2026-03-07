@@ -151,7 +151,7 @@ program
     if (opts.promptOnly) {
       const spinner = ora('正在生成提示词文件…').start();
       try {
-        const promptPath = generatePromptFile(workspace, sessionDir);
+        const promptPath = generatePromptFile(sessionDir);
         spinner.succeed('提示词文件已生成');
         console.log(`  ${chalk.gray('路径')} ${promptPath}`);
         console.log('');
