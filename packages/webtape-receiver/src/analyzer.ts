@@ -93,7 +93,7 @@ async function analyzeByCursor(
   return new Promise<string>((resolve, reject) => {
     const args = [
       'agent',
-      'prompt', instruction,
+      instruction, '--yolo'
     ];
 
     if (model) {
