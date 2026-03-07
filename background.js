@@ -634,7 +634,7 @@ async function stopAndExport() {
   // Load settings
   const settings = await new Promise((resolve) => {
     chrome.storage.local.get('webtapeSettings', (result) => {
-      resolve(result.webtapeSettings || { exportMode: 'download', webhookUrl: '' });
+      resolve(result.webtapeSettings || { exportMode: 'download', webhookUrl: 'http://localhost:5643/webhook' });
     });
   });
   const exportMode = settings.exportMode || 'download';
@@ -733,6 +733,17 @@ async function stopAndExport() {
         throw new Error('Webhook URL is not configured.');
       }
 
+      // Validate URL format
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(webhookUrlStr);
+      } catch (_e) {
+        throw new Error('Webhook URL is not a valid URL: ' + webhookUrlStr);
+      }
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error('Webhook URL must use http or https protocol.');
+      }
+
       const now = new Date();
       const payload = {
         meta: {
@@ -749,14 +760,22 @@ async function stopAndExport() {
       };
 
       console.log('[WebTape] Sending webhook to:', webhookUrlStr);
-      const resp = await fetch(webhookUrlStr, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      let resp;
+      try {
+        resp = await fetch(webhookUrlStr, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (fetchErr) {
+        throw new Error(
+          'Failed to connect to webhook at ' + webhookUrlStr + ': ' + fetchErr.message +
+          '. Check that the URL is correct and the server is running.'
+        );
+      }
 
       if (!resp.ok) {
-        throw new Error(`Webhook request failed: ${resp.status} ${resp.statusText}`);
+        throw new Error('Webhook request failed: ' + resp.status + ' ' + resp.statusText);
       }
       console.log('[WebTape] Webhook sent successfully, status:', resp.status);
     } else {
