@@ -45,7 +45,7 @@ export function buildPrompt(sessionDir: string): string {
     .replace('{{SESSION_DIR}}', sessionDir);
 }
 
-export type AnalyzerBackend = 'cursor';
+export type AnalyzerBackend = 'cursor' | 'claude';
 
 export interface AnalyzeOptions {
   backend: AnalyzerBackend;
@@ -73,6 +73,10 @@ export async function analyzeRecording(opts: AnalyzeOptions): Promise<string> {
 
   if (backend === 'cursor') {
     return analyzeByCursor(sessionDir, reportPath, model);
+  }
+
+  if (backend === 'claude') {
+    return analyzeByClaude(sessionDir, reportPath);
   }
 
   throw new Error(`Unsupported analyzer backend: ${backend}`);
@@ -122,6 +126,46 @@ async function analyzeByCursor(
       reject(new Error(
         `Failed to launch cursor agent: ${err.message}. ` +
         'Ensure Cursor is installed and the `cursor` CLI is on your PATH.',
+      ));
+    });
+  });
+}
+
+/**
+ * Analyze via `claude` CLI (Claude Code).
+ * Command: claude "<instruction>" --dangerously-skip-permissions
+ */
+async function analyzeByClaude(
+  sessionDir: string,
+  reportPath: string,
+): Promise<string> {
+  const instruction = '请阅读当前目录下的 prompt.md 文件，按照其中的指示完成分析任务，并将分析报告输出为 Markdown 格式。';
+
+  return new Promise<string>((resolve, reject) => {
+    const args = [instruction, '--dangerously-skip-permissions'];
+
+    const child = execFile('claude', args, {
+      cwd: sessionDir,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 5 * 60 * 1000,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        if (stderr) {
+          console.error('[analyzer] claude stderr:', stderr);
+        }
+        reject(new Error(`claude failed: ${error.message}`));
+        return;
+      }
+
+      const output = stdout || '';
+      writeFileSync(reportPath, output, 'utf-8');
+      resolve(reportPath);
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(
+        `Failed to launch claude: ${err.message}. ` +
+        'Ensure Claude Code is installed and the `claude` CLI is on your PATH.',
       ));
     });
   });
