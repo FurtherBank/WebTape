@@ -15,9 +15,15 @@ export function extractDomain(url: string): string {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(clean)) {
       return clean;
     }
-    // Get registered domain (last two parts for most TLDs)
+    // Get registered domain
     const parts = clean.split('.');
     if (parts.length <= 2) return clean;
+    // Common multi-part TLDs (e.g. co.uk, com.cn, co.jp, etc.)
+    const multiPartTlds = ['co.uk', 'com.cn', 'com.au', 'co.jp', 'co.kr', 'com.br', 'com.tw', 'com.hk', 'org.uk', 'net.au'];
+    const lastTwo = parts.slice(-2).join('.');
+    if (multiPartTlds.includes(lastTwo) && parts.length > 2) {
+      return parts.slice(-3).join('.');
+    }
     return parts.slice(-2).join('.');
   } catch {
     return 'unknown';

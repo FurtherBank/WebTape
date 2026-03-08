@@ -802,7 +802,7 @@ async function stopAndExport() {
       // Extract domain from the first timeline entry's URL
       let domain = 'unknown';
       try {
-        const siteUrl = indexData[0] && indexData[0].state && indexData[0].state.url;
+        const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
         if (siteUrl) {
           const hostname = new URL(siteUrl).hostname.replace(/^www\./, '');
           const parts = hostname.split('.');
