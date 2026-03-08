@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { relative } from 'node:path';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import { resolveWorkspaceRoot, ensureWorkspace } from './workspace.js';
 import { createWebhookServer } from './server.js';
-import { listRecordings } from './storage.js';
-import { analyzeRecording, generatePromptFile, VALID_BACKENDS, type AnalyzerBackend } from './analyzer.js';
+import { listRecordings, listUnanalyzedRecordings, parseSessionName, formatTime } from './storage.js';
+import { analyzeRecording, VALID_BACKENDS, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
 import { loadConfig, saveConfig, promptAiBackend } from './config.js';
 
 const VERSION = '1.3.0';
@@ -18,6 +18,20 @@ program
   .name('webtape-receiver')
   .description('接收 WebTape 插件的 webhook 数据，保存录制内容并通过 AI 分析业务接口链路')
   .version(VERSION);
+
+/**
+ * Log analysis result — success or failure hint.
+ */
+function logAnalyzeResult(result: AnalyzeResult): void {
+  if (result.success) {
+    const { domain, time } = parseSessionName(result.sessionName);
+    const formattedTime = formatTime(time);
+    console.log(chalk.green(`  ✅ 已将 ${formattedTime} 录制的 ${domain} 站点 api 分析记录保存到了 ${result.reportPath}`));
+  } else {
+    console.log(chalk.yellow(`  ⚠️ 未检测到分析报告: ${result.reportPath}`));
+    console.log(chalk.gray('  你可以稍后使用 webtape-receiver retry 命令重新分析所有未完成的记录。'));
+  }
+}
 
 // ─── serve ───────────────────────────────────────────────────────────────────
 
@@ -32,7 +46,7 @@ program
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const workspaceRoot = resolveWorkspaceRoot(opts.workspace);
-    const workspace = ensureWorkspace(workspaceRoot);
+    const workspace = ensureWorkspace(workspaceRoot, VERSION);
 
     // Resolve AI backend: CLI flag > saved config > interactive prompt
     let backend: AnalyzerBackend;
@@ -79,15 +93,9 @@ program
           console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…'));
         }
       },
-      onAnalyzeDone(reportPath) {
-        const relativePath = relative(workspace.root, reportPath);
-        const isInsideWorkspace = !relativePath.startsWith('..');
+      onAnalyzeDone(result) {
         console.log('');
-        console.log(chalk.green('  ✓ AI 分析完成'));
-        if (isInsideWorkspace) {
-          console.log(`    ${chalk.gray('产物位置')} ${relativePath}`);
-        }
-        console.log(`    ${chalk.gray('完整路径')} ${reportPath}`);
+        logAnalyzeResult(result);
       },
       onError(err) {
         console.error('');
@@ -130,7 +138,7 @@ program
   .option('-w, --workspace <path>', '工作区路径')
   .action((opts) => {
     const workspaceRoot = resolveWorkspaceRoot(opts.workspace);
-    const workspace = ensureWorkspace(workspaceRoot);
+    const workspace = ensureWorkspace(workspaceRoot, VERSION);
     const sessions = listRecordings(workspace);
 
     if (sessions.length === 0) {
@@ -155,27 +163,10 @@ program
   .option('-w, --workspace <path>', '工作区路径')
   .option('--backend <name>', 'AI 分析后端（cursor / claude）', '')
   .option('--model <name>', 'AI 模型名称（例如 kimi-k2.5）')
-  .option('--prompt-only', '仅生成提示词文件，不执行分析', false)
   .action(async (session, opts) => {
     const workspaceRoot = resolveWorkspaceRoot(opts.workspace);
-    const workspace = ensureWorkspace(workspaceRoot);
-    const sessionDir = `${workspace.recordings}/${session}`;
-
-    if (opts.promptOnly) {
-      const spinner = ora('正在生成提示词文件…').start();
-      try {
-        const promptPath = generatePromptFile(sessionDir);
-        spinner.succeed('提示词文件已生成');
-        console.log(`  ${chalk.gray('路径')} ${promptPath}`);
-        console.log('');
-        console.log(chalk.gray('  你可以将此文件内容粘贴到 Cursor Chat 中进行分析。'));
-      } catch (err) {
-        spinner.fail('生成失败');
-        console.error(err instanceof Error ? err.message : err);
-        process.exit(1);
-      }
-      return;
-    }
+    const workspace = ensureWorkspace(workspaceRoot, VERSION);
+    const sessionDir = join(workspace.recordings, session);
 
     // Resolve AI backend: CLI flag > saved config > default cursor
     let backend: AnalyzerBackend;
@@ -190,18 +181,73 @@ program
 
     const spinner = ora(`正在通过 ${backend} 分析会话 ${session}…`).start();
     try {
-      const reportPath = await analyzeRecording({
+      const result = await analyzeRecording({
         backend,
         workspace,
         sessionDir,
         model: opts.model,
       });
-      spinner.succeed('分析完成');
-      console.log(`  ${chalk.gray('报告')} ${reportPath}`);
+      spinner.stop();
+      logAnalyzeResult(result);
     } catch (err) {
       spinner.fail('分析失败');
       console.error(err instanceof Error ? err.message : err);
       process.exit(1);
+    }
+  });
+
+// ─── retry ───────────────────────────────────────────────────────────────────
+
+program
+  .command('retry')
+  .description('重新分析所有未生成报告的录制会话')
+  .option('-w, --workspace <path>', '工作区路径')
+  .option('--backend <name>', 'AI 分析后端（cursor / claude）', '')
+  .option('--model <name>', 'AI 模型名称（例如 kimi-k2.5）')
+  .action(async (opts) => {
+    const workspaceRoot = resolveWorkspaceRoot(opts.workspace);
+    const workspace = ensureWorkspace(workspaceRoot, VERSION);
+    const unanalyzed = listUnanalyzedRecordings(workspace);
+
+    if (unanalyzed.length === 0) {
+      console.log(chalk.green('  ✅ 所有录制会话均已完成分析。'));
+      return;
+    }
+
+    // Resolve AI backend: CLI flag > saved config > default cursor
+    let backend: AnalyzerBackend;
+    const config = loadConfig();
+    if (opts.backend) {
+      backend = opts.backend as AnalyzerBackend;
+    } else if (config.aiBackend) {
+      backend = config.aiBackend;
+    } else {
+      backend = 'cursor';
+    }
+
+    console.log('');
+    console.log(chalk.bold(`待分析会话（共 ${unanalyzed.length} 个）:`));
+    for (const s of unanalyzed) {
+      console.log(`  ${chalk.cyan('●')} ${s}`);
+    }
+    console.log('');
+
+    for (const session of unanalyzed) {
+      const sessionDir = join(workspace.recordings, session);
+      const spinner = ora(`正在通过 ${backend} 分析会话 ${session}…`).start();
+      try {
+        const result = await analyzeRecording({
+          backend,
+          workspace,
+          sessionDir,
+          model: opts.model,
+        });
+        spinner.stop();
+        logAnalyzeResult(result);
+      } catch (err) {
+        spinner.fail(`分析 ${session} 失败`);
+        console.error(err instanceof Error ? err.message : err);
+      }
     }
   });
 

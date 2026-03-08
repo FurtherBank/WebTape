@@ -799,11 +799,22 @@ async function stopAndExport() {
 
       const dataUrl = 'data:application/zip;base64,' + base64;
 
+      // Extract domain from the first timeline entry's URL
+      let domain = 'unknown';
+      try {
+        const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
+        if (siteUrl) {
+          const hostname = new URL(siteUrl).hostname.replace(/^www\./, '');
+          const parts = hostname.split('.');
+          domain = parts.length <= 2 ? hostname : parts.slice(-2).join('.');
+        }
+      } catch (_e) { /* keep default */ }
+
       const now = new Date();
       const pad = (n, len = 2) => String(n).padStart(len, '0');
-      const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      const filename = `webtape_${datePart}_${timePart}.zip`;
+      const datePart = `${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const filename = `${domain}-${datePart}-${timePart}.zip`;
 
       console.log('[WebTape] Starting download:', filename);
 
