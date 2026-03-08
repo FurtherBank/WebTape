@@ -11,7 +11,7 @@ export const VALID_BACKENDS: readonly AnalyzerBackend[] = ['cursor', 'claude'] a
  * Build the analysis instruction for a specific recording session.
  */
 function buildInstruction(sessionName: string): string {
-  return `请分析 recordings/${sessionName} 目录下的录制数据，按照 AGENTS.md 中的指示完成分析，并将报告保存到 recordings/${sessionName}/analysis_report.md`;
+  return `请分析 recordings/${sessionName} 目录下的录制数据，按照 AGENTS.md 中的指示完成分析，并将报告文件保存到对应位置。`;
 }
 
 export interface AnalyzeOptions {
