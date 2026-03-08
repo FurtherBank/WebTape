@@ -149,13 +149,13 @@ export function ensureWorkspace(root: string, version: string): WorkspacePaths {
   const templatesWritten = ensureWorkspaceTemplates(root, version);
 
   if (createdRoot) {
-    console.log(chalk.green(\`  📁 已创建工作区目录: \${root}\`));
+    console.log(chalk.green('  📁 已创建工作区目录: ' + root));
   }
   if (templatesWritten) {
     if (!createdRoot) {
-      console.log(chalk.green(\`  📄 已更新工作区模板文件 (v\${version}): \${root}\`));
+      console.log(chalk.green('  📄 已更新工作区模板文件 (v' + version + '): ' + root));
     } else {
-      console.log(chalk.green(\`  📄 已生成工作区模板文件 (v\${version})\`));
+      console.log(chalk.green('  📄 已生成工作区模板文件 (v' + version + ')'));
     }
   }
 
