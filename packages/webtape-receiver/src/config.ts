@@ -17,7 +17,8 @@ export function loadConfig(): WebtapeConfig {
   if (!existsSync(CONFIG_PATH)) return {};
   try {
     return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
-  } catch {
+  } catch (err) {
+    console.warn('Failed to parse config file, using defaults:', (err as Error).message);
     return {};
   }
 }
@@ -61,7 +62,7 @@ export async function promptAiBackend(): Promise<AnalyzerBackend> {
           rl.close();
           resolve('claude');
         } else {
-          console.log('  无效输入，请输入 1 或 2');
+          console.log('  无效输入，请输入 1、2、cursor 或 claude');
           ask();
         }
       });

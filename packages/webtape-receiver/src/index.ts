@@ -7,7 +7,7 @@ import ora from 'ora';
 import { resolveWorkspaceRoot, ensureWorkspace } from './workspace.js';
 import { createWebhookServer } from './server.js';
 import { listRecordings } from './storage.js';
-import { analyzeRecording, generatePromptFile, type AnalyzerBackend } from './analyzer.js';
+import { analyzeRecording, generatePromptFile, VALID_BACKENDS, type AnalyzerBackend } from './analyzer.js';
 import { loadConfig, saveConfig, promptAiBackend } from './config.js';
 
 const VERSION = '1.3.0';
@@ -234,8 +234,8 @@ configCmd
   .description('设置配置项（可用项: aiBackend）')
   .action((key, value) => {
     if (key === 'aiBackend') {
-      if (value !== 'cursor' && value !== 'claude') {
-        console.error(chalk.red(`  无效值: ${value}，aiBackend 仅支持 cursor 或 claude`));
+      if (!(VALID_BACKENDS as readonly string[]).includes(value)) {
+        console.error(chalk.red(`  无效值: ${value}，aiBackend 仅支持 ${VALID_BACKENDS.join(' 或 ')}`));
         process.exit(1);
       }
       saveConfig({ aiBackend: value as AnalyzerBackend });

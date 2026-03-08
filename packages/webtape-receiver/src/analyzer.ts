@@ -47,6 +47,10 @@ export function buildPrompt(sessionDir: string): string {
 
 export type AnalyzerBackend = 'cursor' | 'claude';
 
+export const VALID_BACKENDS: readonly AnalyzerBackend[] = ['cursor', 'claude'] as const;
+
+const ANALYSIS_INSTRUCTION = '请阅读当前目录下的 prompt.md 文件，按照其中的指示完成分析任务，并将分析报告输出为 Markdown 格式。';
+
 export interface AnalyzeOptions {
   backend: AnalyzerBackend;
   workspace: WorkspacePaths;
@@ -92,12 +96,10 @@ async function analyzeByCursor(
   reportPath: string,
   model?: string,
 ): Promise<string> {
-  const instruction = '请阅读当前目录下的 prompt.md 文件，按照其中的指示完成分析任务，并将分析报告输出为 Markdown 格式。';
-
   return new Promise<string>((resolve, reject) => {
     const args = [
       'agent',
-      instruction, '--yolo'
+      ANALYSIS_INSTRUCTION, '--yolo'
     ];
 
     if (model) {
@@ -139,10 +141,8 @@ async function analyzeByClaude(
   sessionDir: string,
   reportPath: string,
 ): Promise<string> {
-  const instruction = '请阅读当前目录下的 prompt.md 文件，按照其中的指示完成分析任务，并将分析报告输出为 Markdown 格式。';
-
   return new Promise<string>((resolve, reject) => {
-    const args = [instruction, '--dangerously-skip-permissions'];
+    const args = [ANALYSIS_INSTRUCTION, '--dangerously-skip-permissions'];
 
     const child = execFile('claude', args, {
       cwd: sessionDir,
