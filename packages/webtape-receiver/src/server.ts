@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
 import type { WebTapePayload } from './types.js';
 import { saveRecording } from './storage.js';
-import { analyzeRecording, generatePromptFile, type AnalyzerBackend } from './analyzer.js';
+import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
 
 export interface ServerOptions {
   port: number;
@@ -11,7 +12,7 @@ export interface ServerOptions {
   analyzerBackend: AnalyzerBackend;
   analyzerModel?: string;
   onReceive?: (sessionDir: string, payload: WebTapePayload) => void;
-  onAnalyzeDone?: (reportPath: string) => void;
+  onAnalyzeDone?: (result: AnalyzeResult) => void;
   onError?: (err: Error) => void;
 }
 
@@ -96,24 +97,10 @@ export function createWebhookServer(opts: ServerOptions) {
     // Trigger analysis for a specific session
     if (req.method === 'POST' && req.url?.startsWith('/analyze/')) {
       const sessionName = req.url.slice('/analyze/'.length);
-      const sessionDir = `${workspace.recordings}/${sessionName}`;
+      const sessionDir = join(workspace.recordings, sessionName);
       try {
         runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeDone, onError);
         json(res, 200, { status: 'analysis_started', session: sessionDir });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        json(res, 500, { error: message });
-      }
-      return;
-    }
-
-    // Generate prompt file for manual analysis
-    if (req.method === 'POST' && req.url?.startsWith('/prompt/')) {
-      const sessionName = req.url.slice('/prompt/'.length);
-      const sessionDir = `${workspace.recordings}/${sessionName}`;
-      try {
-        const promptPath = generatePromptFile(sessionDir);
-        json(res, 200, { status: 'prompt_generated', path: promptPath });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         json(res, 500, { error: message });
@@ -142,10 +129,10 @@ function runAnalysis(
   sessionDir: string,
   backend: AnalyzerBackend,
   model: string | undefined,
-  onDone?: (reportPath: string) => void,
+  onDone?: (result: AnalyzeResult) => void,
   onError?: (err: Error) => void,
 ) {
   analyzeRecording({ backend, workspace, sessionDir, model })
-    .then((reportPath) => onDone?.(reportPath))
+    .then((result) => onDone?.(result))
     .catch((err) => onError?.(err instanceof Error ? err : new Error(String(err))));
 }

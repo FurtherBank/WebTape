@@ -1,25 +1,76 @@
-import { mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
 import type { WebTapePayload } from './types.js';
-import { buildPrompt } from './analyzer.js';
 
 /**
- * Build a human-readable session directory name from the payload metadata.
- * Format: YYYY-MM-DD_HH-mm-ss
+ * Extract the registered domain (一级域名) from a URL string.
+ * e.g. "https://www.github.com/page" → "github.com"
+ */
+export function extractDomain(url: string): string {
+  try {
+    const hostname = new URL(url).hostname;
+    const clean = hostname.replace(/^www\./, '');
+    // IP addresses: keep as-is
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(clean)) {
+      return clean;
+    }
+    // Get registered domain (last two parts for most TLDs)
+    const parts = clean.split('.');
+    if (parts.length <= 2) return clean;
+    return parts.slice(-2).join('.');
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Find the primary site URL from the payload's index.json timeline.
+ * Uses the first context block that has a state with a URL.
+ */
+function extractSiteUrl(payload: WebTapePayload): string {
+  for (const block of payload.content['index.json']) {
+    if (block.state?.url) return block.state.url;
+  }
+  return '';
+}
+
+/**
+ * Build the session directory name from the payload.
+ * Format: ${domain}-${MMDD}-${HHmmss}
+ * e.g. "github.com-0305-123000"
  */
 function sessionDirName(payload: WebTapePayload): string {
   const d = new Date(payload.meta.epoch);
   const pad = (n: number, len = 2) => String(n).padStart(len, '0');
-  return [
-    d.getFullYear(),
-    pad(d.getMonth() + 1),
-    pad(d.getDate()),
-  ].join('-') + '_' + [
-    pad(d.getHours()),
-    pad(d.getMinutes()),
-    pad(d.getSeconds()),
-  ].join('-');
+
+  const domain = extractDomain(extractSiteUrl(payload)) || 'unknown';
+  const datePart = `${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const timePart = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+
+  return `${domain}-${datePart}-${timePart}`;
+}
+
+/**
+ * Parse a session directory name back into its components.
+ * Format: ${domain}-${MMDD}-${HHmmss}
+ */
+export function parseSessionName(name: string): { domain: string; date: string; time: string } {
+  const lastDash = name.lastIndexOf('-');
+  const time = name.slice(lastDash + 1);
+  const rest = name.slice(0, lastDash);
+  const secondLastDash = rest.lastIndexOf('-');
+  const date = rest.slice(secondLastDash + 1);
+  const domain = rest.slice(0, secondLastDash);
+  return { domain, date, time };
+}
+
+/**
+ * Format a time string "HHmmss" → "HH:mm:ss".
+ */
+export function formatTime(time: string): string {
+  if (time.length !== 6) return time;
+  return `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}`;
 }
 
 /**
@@ -74,10 +125,6 @@ export function saveRecording(
     'utf-8',
   );
 
-  // Build and save the analysis prompt alongside the recording data
-  const prompt = buildPrompt(sessionDir);
-  writeFileSync(join(sessionDir, 'prompt.md'), prompt, 'utf-8');
-
   return sessionDir;
 }
 
@@ -94,4 +141,18 @@ export function listRecordings(workspace: WorkspacePaths): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Check whether a recording session has an analysis report.
+ */
+export function hasAnalysisReport(workspace: WorkspacePaths, sessionName: string): boolean {
+  return existsSync(join(workspace.recordings, sessionName, 'analysis_report.md'));
+}
+
+/**
+ * List recordings that do NOT have an analysis report.
+ */
+export function listUnanalyzedRecordings(workspace: WorkspacePaths): string[] {
+  return listRecordings(workspace).filter((name) => !hasAnalysisReport(workspace, name));
 }
