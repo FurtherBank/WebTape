@@ -7,9 +7,10 @@ import ora from 'ora';
 import { resolveWorkspaceRoot, ensureWorkspace } from './workspace.js';
 import { createWebhookServer } from './server.js';
 import { listRecordings } from './storage.js';
-import { analyzeRecording, generatePromptFile } from './analyzer.js';
+import { analyzeRecording, generatePromptFile, VALID_BACKENDS, type AnalyzerBackend } from './analyzer.js';
+import { loadConfig, saveConfig, promptAiBackend } from './config.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const program = new Command();
 
@@ -26,20 +27,32 @@ program
   .option('-p, --port <number>', '监听端口', '5643')
   .option('-w, --workspace <path>', '工作区路径（默认 ~/Desktop/WebTape）')
   .option('--no-auto-analyze', '接收数据后不自动运行 AI 分析')
-  .option('--backend <name>', 'AI 分析后端（cursor）', 'cursor')
+  .option('--backend <name>', 'AI 分析后端（cursor / claude）', '')
   .option('--model <name>', 'AI 模型名称（例如 kimi-k2.5）')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const workspaceRoot = resolveWorkspaceRoot(opts.workspace);
     const workspace = ensureWorkspace(workspaceRoot);
 
+    // Resolve AI backend: CLI flag > saved config > interactive prompt
+    let backend: AnalyzerBackend;
+    const config = loadConfig();
+    if (opts.backend) {
+      backend = opts.backend as AnalyzerBackend;
+    } else if (config.aiBackend) {
+      backend = config.aiBackend;
+    } else {
+      backend = await promptAiBackend();
+      saveConfig({ aiBackend: backend });
+    }
+
     console.log('');
-    console.log(chalk.bold.cyan('  🎬 WebTape Receiver'));
+    console.log(chalk.bold.cyan('  🎬 WebTape Receiver') + chalk.gray(` v${VERSION}`));
     console.log(chalk.gray('  ─────────────────────────────────'));
     console.log(`  ${chalk.green('工作区')}  ${workspace.root}`);
     console.log(`  ${chalk.green('端口')}    ${port}`);
     console.log(`  ${chalk.green('自动分析')} ${opts.autoAnalyze ? chalk.yellow('开启') : chalk.gray('关闭')}`);
-    console.log(`  ${chalk.green('AI 后端')} ${opts.backend}`);
+    console.log(`  ${chalk.green('AI 后端')} ${backend}`);
     if (opts.model) {
       console.log(`  ${chalk.green('AI 模型')} ${opts.model}`);
     }
@@ -51,7 +64,7 @@ program
       port,
       workspace,
       autoAnalyze: opts.autoAnalyze,
-      analyzerBackend: opts.backend,
+      analyzerBackend: backend,
       analyzerModel: opts.model,
       onReceive(sessionDir, payload) {
         const actions = payload.content['index.json'].filter((b) => b.action).length;
@@ -140,7 +153,7 @@ program
   .command('analyze <session>')
   .description('对指定的录制会话运行 AI 分析')
   .option('-w, --workspace <path>', '工作区路径')
-  .option('--backend <name>', 'AI 分析后端（cursor）', 'cursor')
+  .option('--backend <name>', 'AI 分析后端（cursor / claude）', '')
   .option('--model <name>', 'AI 模型名称（例如 kimi-k2.5）')
   .option('--prompt-only', '仅生成提示词文件，不执行分析', false)
   .action(async (session, opts) => {
@@ -164,10 +177,21 @@ program
       return;
     }
 
-    const spinner = ora(`正在通过 ${opts.backend} 分析会话 ${session}…`).start();
+    // Resolve AI backend: CLI flag > saved config > default cursor
+    let backend: AnalyzerBackend;
+    const config = loadConfig();
+    if (opts.backend) {
+      backend = opts.backend as AnalyzerBackend;
+    } else if (config.aiBackend) {
+      backend = config.aiBackend;
+    } else {
+      backend = 'cursor';
+    }
+
+    const spinner = ora(`正在通过 ${backend} 分析会话 ${session}…`).start();
     try {
       const reportPath = await analyzeRecording({
-        backend: opts.backend,
+        backend,
         workspace,
         sessionDir,
         model: opts.model,
@@ -177,6 +201,48 @@ program
     } catch (err) {
       spinner.fail('分析失败');
       console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+// ─── config ──────────────────────────────────────────────────────────────────
+
+const configCmd = program
+  .command('config')
+  .description('管理 webtape-receiver 配置');
+
+configCmd
+  .command('show')
+  .description('显示当前配置')
+  .action(() => {
+    const config = loadConfig();
+    console.log('');
+    console.log(chalk.bold('当前配置:'));
+    console.log('');
+    if (Object.keys(config).length === 0) {
+      console.log(chalk.gray('  （尚无配置，使用 config set 进行设置）'));
+    } else {
+      if (config.aiBackend) {
+        console.log(`  ${chalk.green('AI 后端')}  ${config.aiBackend}`);
+      }
+    }
+    console.log('');
+  });
+
+configCmd
+  .command('set <key> <value>')
+  .description('设置配置项（可用项: aiBackend）')
+  .action((key, value) => {
+    if (key === 'aiBackend') {
+      if (!(VALID_BACKENDS as readonly string[]).includes(value)) {
+        console.error(chalk.red(`  无效值: ${value}，aiBackend 仅支持 ${VALID_BACKENDS.join(' 或 ')}`));
+        process.exit(1);
+      }
+      saveConfig({ aiBackend: value as AnalyzerBackend });
+      console.log(chalk.green(`  ✓ 已设置 aiBackend = ${value}`));
+    } else {
+      console.error(chalk.red(`  未知配置项: ${key}`));
+      console.log(chalk.gray('  可用配置项: aiBackend'));
       process.exit(1);
     }
   });
