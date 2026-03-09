@@ -28,6 +28,8 @@ export interface AnalyzeResult {
   reportPath: string;
   /** Session name */
   sessionName: string;
+  /** Analysis duration in milliseconds */
+  duration?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export async function analyzeRecording(opts: AnalyzeOptions): Promise<AnalyzeRes
   const sessionName = basename(sessionDir);
   const reportPath = join(workspace.recordings, sessionName, 'analysis_report.md');
 
+  const startTime = Date.now();
   if (backend === 'cursor') {
     await runCursor(workspace.root, sessionName, model);
   } else if (backend === 'claude') {
@@ -47,9 +50,10 @@ export async function analyzeRecording(opts: AnalyzeOptions): Promise<AnalyzeRes
   } else {
     throw new Error(`Unsupported analyzer backend: ${backend}`);
   }
+  const duration = Date.now() - startTime;
 
   const success = existsSync(reportPath);
-  return { success, reportPath, sessionName };
+  return { success, reportPath, sessionName, duration };
 }
 
 /**

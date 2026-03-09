@@ -26,7 +26,8 @@ function logAnalyzeResult(result: AnalyzeResult): void {
   if (result.success) {
     const { domain, time } = parseSessionName(result.sessionName);
     const formattedTime = formatTime(time);
-    console.log(chalk.green(`  ✅ 已将 ${formattedTime} 录制的 ${domain} 站点 api 分析记录保存到了 ${result.reportPath}`));
+    const durationText = result.duration ? chalk.gray(` (耗时 ${(result.duration / 1000).toFixed(1)}s)`) : '';
+    console.log(chalk.green(`  ✅ 已将 ${formattedTime} 录制的 ${domain} 站点 api 分析记录保存到了 ${result.reportPath}${durationText}`));
   } else {
     console.log(chalk.yellow(`  ⚠️ 未检测到分析报告: ${result.reportPath}`));
     console.log(chalk.gray('  你可以稍后使用 webtape-receiver retry 命令重新分析所有未完成的记录。'));
@@ -90,7 +91,7 @@ program
         console.log(`    ${chalk.gray('请求数')}  ${requests}`);
         if (opts.autoAnalyze) {
           console.log('');
-          console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…'));
+          console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…') + chalk.gray(' (预估 1-2min，请稍候)'));
         }
       },
       onAnalyzeDone(result) {
@@ -180,6 +181,7 @@ program
     }
 
     const spinner = ora(`正在通过 ${backend} 分析会话 ${session}…`).start();
+    spinner.text = `正在通过 ${backend} 分析会话 ${session}… ${chalk.gray('(预估 1-2min，请稍候)')}`;
     try {
       const result = await analyzeRecording({
         backend,
@@ -235,6 +237,7 @@ program
     for (const session of unanalyzed) {
       const sessionDir = join(workspace.recordings, session);
       const spinner = ora(`正在通过 ${backend} 分析会话 ${session}…`).start();
+      spinner.text = `正在通过 ${backend} 分析会话 ${session}… ${chalk.gray('(预估 1-2min，请稍候)')}`;
       try {
         const result = await analyzeRecording({
           backend,
