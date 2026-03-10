@@ -22,7 +22,7 @@
    - 每个导出的函数都必须对应在这个页面中，用户视角的一个完整业务过程。
    - **代码规范参考**：
      ```javascript
-     // 引入 chromeFetch，其与原生 fetch 无异，但是会自动使用电脑本地 chrome 的 cookie。
+     // 引入 chromeFetch，其与原生 fetch 无异，但是会自动使用电脑本地 chrome 的 cookie, 以及 chrome 的默认请求头。
      import { chromeFetch } from '@cpu-utils/headless'
 
      /**

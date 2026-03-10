@@ -1,33 +1,49 @@
-# WebTape — Web Action Recorder
+# WebTape — 网页操作录制器
 
-A Chrome Extension (Manifest V3) that silently records user interactions, network requests, and accessibility-tree snapshots, then exports everything as a structured ZIP file for LLM-powered analysis and code generation.
+一个 Chrome 浏览器扩展（Manifest V3），能够静默记录用户交互、网络请求和无障碍树（Accessibility Tree）快照，并将所有内容导出为结构化的 ZIP 文件，用于 LLM 驱动的分析和代码生成。
 
-## Features
+## 特性
 
-- **Direct Record** — attaches debugger immediately, captures the current page state.
-- **Refresh & Record** — attaches debugger then reloads the page, capturing the full initialisation flow.
-- **Stop & Export** — finalises the session and downloads a tiered ZIP archive.
-- **A11y-powered DOM** — uses Chrome's Accessibility Tree instead of raw HTML to minimise token usage.
-- **Sliding-window request attribution** — automatically associates network calls with the user action that triggered them.
-- **Hierarchical ZIP** — `index.json` (skeleton + A11y summaries) + `requests/` + `responses/` folders.
-- **SSE (Server-Sent Events) capture** — captures individual SSE events with timestamps, event names, IDs, and data via CDP `Network.eventSourceMessageReceived`.
-- **WebSocket capture** — captures WebSocket handshake, sent/received frames, and connection lifecycle via CDP WebSocket events.
+- **直接录制 (Direct Record)** — 立即附加调试器，捕获当前页面状态。
+- **刷新并录制 (Refresh & Record)** — 附加调试器后重新加载页面，捕获完整的初始化流程。
+- **停止并导出 (Stop & Export)** — 结束会话并自动下载分层结构的 ZIP 归档文件。
+- **A11y 驱动的 DOM** — 使用 Chrome 的无障碍树（Accessibility Tree）代替原始 HTML，以最大限度减少 Token 消耗。
+- **滑动窗口请求归因** — 自动将网络调用与触发它们的用户操作关联起来。
+- **层级化 ZIP 结构** — 包含 `index.json`（骨架 + A11y 摘要）以及 `requests/` 和 `responses/` 文件夹。
+- **SSE (Server-Sent Events) 捕获** — 通过 CDP `Network.eventSourceMessageReceived` 捕获带有时间戳、事件名称、ID 和数据的单个 SSE 事件。
+- **WebSocket 捕获** — 通过 CDP WebSocket 事件捕获 WebSocket 握手、发送/接收的帧以及连接生命周期。
 
-## ZIP Output Structure
+---
+
+### 🚀 核心配套：WebTape Receiver (CLI)
+
+**让网页自动化像录屏一样简单。**
+
+WebTape Receiver 是 WebTape 生态中的核心动力引擎，它能将你在浏览器中的操作，瞬间转化为可直接运行且**不依赖网站 Open API** 的自动化脚本。
+
+- **录制即自动化**：配合 AI 分析，直接理解网页操作并生成可运行的 `request.js` 脚本。
+- **免去逆向工程**：自动处理 Cookie、梳理接口调用链路及参数流转。
+- **无缝集成**：生成的函数可快速集成到你的工具、爬虫或 AI Agent 中。
+
+👉 [了解更多关于 WebTape Receiver 的核心价值与用法](./packages/webtape-receiver/README.md)
+
+---
+
+## ZIP 输出结构
 
 ```
 webtape_<timestamp>.zip
 │
-├── index.json              # Level 1 – AI-readable timeline skeleton
-├── requests/               # Level 2 – full request bodies (by req_id)
+├── index.json              # 第 1 层 – AI 可读的时间线骨架
+├── requests/               # 第 2 层 – 完整请求体（按 req_id 分类）
 │   └── req_0001_<ts>_body.json
-└── responses/              # Level 2 – full response bodies (by req_id)
+└── responses/              # 第 2 层 – 完整响应体（按 req_id 分类）
     └── req_0001_<ts>_res.json
 ```
 
-### Response Format by Type
+### 响应格式类型
 
-Each response file includes a `type` field indicating the protocol used:
+每个响应文件夹包含一个 `type` 字段，指示所使用的协议：
 
 **HTTP** (`type: "http"`):
 ```json
@@ -70,68 +86,68 @@ Each response file includes a `type` field indicating the protocol used:
 }
 ```
 
-## Installation
+## 安装
 
-### From source
+### 从源码安装
 
-1. Clone the repository.
-2. Install dependencies (copies `jszip.min.js` into `lib/`):
+1. 克隆仓库。
+2. 安装依赖（会将 `jszip.min.js` 复制到 `lib/` 目录）：
    ```bash
    npm install
    ```
-3. Open Chrome and navigate to `chrome://extensions`.
-4. Enable **Developer mode** (top-right toggle).
-5. Click **Load unpacked** and select the repository root.
+3. 打开 Chrome 浏览器并导航至 `chrome://extensions`。
+4. 开启 **开发者模式** (右上角开关)。
+5. 点击 **加载已解压的扩展程序** 并选择仓库根目录。
 
-## Usage
+## 使用方法
 
-1. Click the WebTape toolbar icon.
-2. Navigate to the page you want to record.
-3. Click **Direct Record** (or **Refresh & Record** to capture the full page load).
-4. Interact with the page normally.
-5. Click **Stop & Export** — a ZIP file will be downloaded automatically.
+1. 点击 WebTape 工具栏图标。
+2. 导航到你想要录制的页面。
+3. 点击 **Direct Record**（或点击 **Refresh & Record** 以捕获完整的页面加载过程）。
+4. 正常与页面进行交互。
+5. 点击 **Stop & Export** — ZIP 文件将自动开始下载。
 
-## Architecture
+## 架构设计
 
-| Module | Location | Responsibility |
+| 模块 | 位置 | 职责 |
 |---|---|---|
-| UI & Control | `popup.html` / `popup.js` | User controls, state display |
-| CDP Sniffer | `background.js` | `chrome.debugger` attach/detach, Network + Accessibility CDP domains |
-| Action Capture | `content.js` | DOM event listeners → action messages |
-| Aggregation Engine | `background.js` | Sliding-window context matching |
-| Export Module | `background.js` | JSZip packaging, `chrome.downloads` trigger |
+| UI & 控制 | `popup.html` / `popup.js` | 用户控制界面、状态显示 |
+| CDP 嗅探器 | `background.js` | `chrome.debugger` 的附加/分离，Network 和 Accessibility CDP 域处理 |
+| 操作捕获 | `content.js` | DOM 事件监听器 → 发送操作消息 |
+| 聚合引擎 | `background.js` | 滑动窗口上下文匹配 |
+| 导出模块 | `background.js` | JSZip 打包，触发 `chrome.downloads` |
 
-## Release
+## 发布
 
-To publish a new release, push a version tag to the `main` branch:
+若要发布新版本，请向 `main` 分支推送版本标签：
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-This triggers the GitHub Actions workflow which builds the extension package and creates a GitHub Release with the `webtape-v1.0.0.zip` artifact.
+这将触发 GitHub Actions 工作流，构建扩展包并创建一个带有 `webtape-v1.0.0.zip` 产物的 GitHub Release。
 
-## File Overview
+## 文件概览
 
 ```
-manifest.json      Chrome Extension Manifest V3
-background.js      Service worker – CDP, aggregation, export
-content.js         Content script – action capture
-popup.html         Popup UI markup
-popup.js           Popup logic
-popup.css          Popup styles
+manifest.json      Chrome 扩展 Manifest V3
+background.js      Service worker – CDP、聚合、导出
+content.js         Content script – 操作捕获
+popup.html         Popup UI 结构
+popup.js           Popup 逻辑
+popup.css          Popup 样式
 lib/
-  jszip.min.js     Bundled JSZip library
+  jszip.min.js     内置的 JSZip 库
 icons/
-  icon{16,32,48,128}.png  Extension icons
+  icon{16,32,48,128}.png  扩展图标
 packages/
-  webtape-receiver/      CLI webhook receiver & AI analyzer
+  webtape-receiver/      CLI Webhook 接收器 & AI 分析器
 ```
 
 ## WebTape Receiver (CLI)
 
-`webtape-receiver` 是一个命令行工具，用于接收 WebTape 插件通过 webhook 发送的录制数据，并借助 AI 工具分析网页业务逻辑的完整接口链路。
+`webtape-receiver` 是一个命令行工具，用于接收 WebTape 插件通过 Webhook 发送的录制数据，并借助 AI 工具分析网页业务逻辑的完整接口链路。
 
 ### 安装
 
