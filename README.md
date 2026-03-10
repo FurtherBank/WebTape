@@ -1,17 +1,13 @@
 # WebTape — 网页操作录制器
 
-一个 Chrome 浏览器扩展（Manifest V3），能够静默记录用户交互、网络请求和无障碍树（Accessibility Tree）快照，并将所有内容导出为结构化的 ZIP 文件，用于 LLM 驱动的分析和代码生成。
+一个 Chrome 浏览器扩展，能够：
+- 通过录制过程，按照时间顺序记录网页的**用户操作**、**网络请求**和**页面内容快照**
+- 并将所有内容以 zip 或 WebHook 形式以**结构化、便于 LLM 分析的形式**导出
 
-## 特性
+导出的内容可适用于以下 LLM 驱动的分析场景：
+- 网页交互流程分析
+- 前端开发过程中，捕捉业务流程交互情况进行 Debug
 
-- **直接录制 (Direct Record)** — 立即捕获当前页面状态，并录制接下来的页面操作和接口数据。
-- **刷新并录制 (Refresh & Record)** — 刷新页面，并录制网站初始化流程，以及接下来的页面操作和接口数据。
-- **停止并导出 (Stop & Export)** — 结束会话，并以 Zip 或 WebHook 方式导出录制数据。
-- **A11y 驱动的 DOM** — 使用 Chrome 的无障碍树（Accessibility Tree）代替原始 HTML，以最大限度减少 AI 分析的 Token 消耗。
-- **滑动窗口请求归因** — 自动将网络调用与触发它们的用户操作关联起来。
-- **层级化 ZIP 结构** — 包含 `index.json`（骨架 + A11y 摘要）以及 `requests/` 和 `responses/` 文件夹，避免 AI 直接分析击穿上下文。
-- **SSE (Server-Sent Events) 捕获** — 通过 CDP `Network.eventSourceMessageReceived` 捕获带有时间戳、事件名称、ID 和数据的单个 SSE 事件。
-- **WebSocket 捕获** — 通过 CDP WebSocket 事件捕获 WebSocket 握手、发送/接收的帧以及连接生命周期。
 
 ---
 
@@ -47,6 +43,17 @@ WebTape Receiver 是 WebTape 生态中的核心动力引擎，它能将你在浏
 2. **实时同步**: 插件录制完成后，数据自动同步至本地工作区。
 3. **AI 分析**: 运行 `analyze` 命令，AI 自动梳理接口依赖并生成 `request.js`。
 4. **一键运行**: 直接调用生成的函数，实现业务自动化。
+
+## 特性
+
+- **直接录制 (Direct Record)** — 立即捕获当前页面状态，并录制接下来的页面操作和接口数据。
+- **刷新并录制 (Refresh & Record)** — 刷新页面，并录制网站初始化流程，以及接下来的页面操作和接口数据。
+- **停止并导出 (Stop & Export)** — 结束会话，并以 Zip 或 WebHook 方式导出录制数据。
+- **A11y 驱动的 DOM** — 使用 Chrome 的无障碍树（Accessibility Tree）代替原始 HTML，以最大限度减少 AI 分析的 Token 消耗。
+- **滑动窗口请求归因** — 自动将网络调用与触发它们的用户操作关联起来。
+- **层级化 ZIP 结构** — 包含 `index.json`（骨架 + A11y 摘要）以及 `requests/` 和 `responses/` 文件夹，避免 AI 直接分析击穿上下文。
+- **SSE (Server-Sent Events) 捕获** — 通过 CDP `Network.eventSourceMessageReceived` 捕获带有时间戳、事件名称、ID 和数据的单个 SSE 事件。
+- **WebSocket 捕获** — 通过 CDP WebSocket 事件捕获 WebSocket 握手、发送/接收的帧以及连接生命周期。
 
 ## ZIP 输出结构
 
