@@ -51,6 +51,17 @@ webtape-receiver serve
 
 ---
 
+## WIP 视频演示
+
+### 场景：从网页操作到自动化脚本生成
+
+| 阶段 | 操作 | 核心产出 |
+| :--- | :--- | :--- |
+| **1. 接收** | 终端运行 `webtape-receiver serve`，插件端点击导出。 | 录制数据自动进入 `recordings/` 目录。 |
+| **2. 分析** | 运行 `webtape-receiver analyze <session>`。 | AI 自动生成 `analysis_report.md` 业务文档。 |
+| **3. 生成** | AI 根据 `AGENTS.md` 规则编写代码。 | 自动生成 `request.js`，包含封装好的业务函数。 |
+| **4. 集成** | 在你的项目中 `import { xxx } from './request.js'`。 | **无需逆向工程**，直接实现网页功能自动化。 |
+
 ## 📂 你的自动化工作区 (Workspace)
 
 当你运行 `serve` 命令时，系统会自动为你准备好一切：

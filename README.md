@@ -4,12 +4,12 @@
 
 ## 特性
 
-- **直接录制 (Direct Record)** — 立即附加调试器，捕获当前页面状态。
-- **刷新并录制 (Refresh & Record)** — 附加调试器后重新加载页面，捕获完整的初始化流程。
-- **停止并导出 (Stop & Export)** — 结束会话并自动下载分层结构的 ZIP 归档文件。
-- **A11y 驱动的 DOM** — 使用 Chrome 的无障碍树（Accessibility Tree）代替原始 HTML，以最大限度减少 Token 消耗。
+- **直接录制 (Direct Record)** — 立即捕获当前页面状态，并录制接下来的页面操作和接口数据。
+- **刷新并录制 (Refresh & Record)** — 刷新页面，并录制网站初始化流程，以及接下来的页面操作和接口数据。
+- **停止并导出 (Stop & Export)** — 结束会话，并以 Zip 或 WebHook 方式导出录制数据。
+- **A11y 驱动的 DOM** — 使用 Chrome 的无障碍树（Accessibility Tree）代替原始 HTML，以最大限度减少 AI 分析的 Token 消耗。
 - **滑动窗口请求归因** — 自动将网络调用与触发它们的用户操作关联起来。
-- **层级化 ZIP 结构** — 包含 `index.json`（骨架 + A11y 摘要）以及 `requests/` 和 `responses/` 文件夹。
+- **层级化 ZIP 结构** — 包含 `index.json`（骨架 + A11y 摘要）以及 `requests/` 和 `responses/` 文件夹，避免 AI 直接分析击穿上下文。
 - **SSE (Server-Sent Events) 捕获** — 通过 CDP `Network.eventSourceMessageReceived` 捕获带有时间戳、事件名称、ID 和数据的单个 SSE 事件。
 - **WebSocket 捕获** — 通过 CDP WebSocket 事件捕获 WebSocket 握手、发送/接收的帧以及连接生命周期。
 
@@ -28,6 +28,25 @@ WebTape Receiver 是 WebTape 生态中的核心动力引擎，它能将你在浏
 👉 [了解更多关于 WebTape Receiver 的核心价值与用法](./packages/webtape-receiver/README.md)
 
 ---
+## WIP 视频演示
+
+### 1. 插件录制演示 (Bilibili 场景)
+*展示如何通过插件捕获网页交互与完整接口链路。*
+
+| 步骤 | 操作 | 画面重点 |
+| :--- | :--- | :--- |
+| **1. 准备** | 打开 Chrome 进入目标页面，点击 WebTape 图标。 | 插件 Popup 界面弹出，显示 "Ready"。 |
+| **2. 开始** | 点击 **"Refresh & Record"**。 | 页面自动刷新，插件开始记录初始化加载及后续操作。 |
+| **3. 交互** | 正常进行网页交互（如点赞、评论、翻页）。 | WebTape 静默记录所有点击事件和背后的 API 请求。 |
+| **4. 导出** | 点击 **"Stop & Export"**。 | 自动下载包含完整 A11y 树和请求链路的 ZIP 包。 |
+
+### 2. 自动化闭环演示 (从录制到脚本生成)
+*配合 WebTape Receiver，将录制内容瞬间转化为可运行的 JS 脚本。*
+
+1. **启动 Receiver**: `webtape-receiver serve` 开启 Webhook 接收。
+2. **实时同步**: 插件录制完成后，数据自动同步至本地工作区。
+3. **AI 分析**: 运行 `analyze` 命令，AI 自动梳理接口依赖并生成 `request.js`。
+4. **一键运行**: 直接调用生成的函数，实现业务自动化。
 
 ## ZIP 输出结构
 
