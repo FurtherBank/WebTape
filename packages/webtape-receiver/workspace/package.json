@@ -1,0 +1,9 @@
+{
+  "name": "webtape-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebTape 录制工作区，由 webtape-receiver CLI 维护",
+  "dependencies": {
+    "@cpu-utils/headless": "latest"
+  }
+}

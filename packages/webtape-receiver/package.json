@@ -10,9 +10,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/pack-workspace.js",
     "dev": "tsx src/index.ts",
-    "start": "tsc && npm link && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape-receiver 已完成编译并链接，现在你可以直接在终端输入 \\x1b[36mwebtape-receiver\\x1b[0m 进行本地测试。'",
+    "start": "npm run build && npm link && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape-receiver 已完成编译并链接，现在你可以直接在终端输入 \\x1b[36mwebtape-receiver\\x1b[0m 进行本地测试。'",
     "prepublishOnly": "npm run build"
   },
   "repository": {
@@ -33,11 +33,14 @@
   ],
   "license": "ISC",
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
+    "minimatch": "^10.2.4",
     "ora": "^8.1.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

@@ -12,6 +12,7 @@ export interface ServerOptions {
   analyzerBackend: AnalyzerBackend;
   analyzerModel?: string;
   onReceive?: (sessionDir: string, payload: WebTapePayload) => void;
+  onAnalyzeLog?: (line: string) => void;
   onAnalyzeDone?: (result: AnalyzeResult) => void;
   onError?: (err: Error) => void;
 }
@@ -48,7 +49,7 @@ function handleCors(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 export function createWebhookServer(opts: ServerOptions) {
-  const { port, workspace, autoAnalyze, analyzerBackend, analyzerModel, onReceive, onAnalyzeDone, onError } = opts;
+  const { port, workspace, autoAnalyze, analyzerBackend, analyzerModel, onReceive, onAnalyzeLog, onAnalyzeDone, onError } = opts;
 
   const server = createServer(async (req, res) => {
     if (handleCors(req, res)) return;
@@ -78,7 +79,7 @@ export function createWebhookServer(opts: ServerOptions) {
         onReceive?.(sessionDir, payload);
 
         if (autoAnalyze) {
-          runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeDone, onError);
+          runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeLog, onAnalyzeDone, onError);
         }
 
         json(res, 200, {
@@ -99,7 +100,7 @@ export function createWebhookServer(opts: ServerOptions) {
       const sessionName = req.url.slice('/analyze/'.length);
       const sessionDir = join(workspace.recordings, sessionName);
       try {
-        runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeDone, onError);
+        runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeLog, onAnalyzeDone, onError);
         json(res, 200, { status: 'analysis_started', session: sessionDir });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -129,10 +130,11 @@ function runAnalysis(
   sessionDir: string,
   backend: AnalyzerBackend,
   model: string | undefined,
+  onLog?: (line: string) => void,
   onDone?: (result: AnalyzeResult) => void,
   onError?: (err: Error) => void,
 ) {
-  analyzeRecording({ backend, workspace, sessionDir, model })
+  analyzeRecording({ backend, workspace, sessionDir, model, onLog })
     .then((result) => onDone?.(result))
     .catch((err) => onError?.(err instanceof Error ? err : new Error(String(err))));
 }

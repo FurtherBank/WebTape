@@ -1,17 +1,20 @@
-import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
-import type { WorkspacePaths } from './workspace.js';
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join, basename } from "node:path";
+import type { WorkspacePaths } from "./workspace.js";
 
-export type AnalyzerBackend = 'cursor' | 'claude';
+export type AnalyzerBackend = "cursor" | "claude";
 
-export const VALID_BACKENDS: readonly AnalyzerBackend[] = ['cursor', 'claude'] as const;
+export const VALID_BACKENDS: readonly AnalyzerBackend[] = [
+  "cursor",
+  "claude",
+] as const;
 
 /**
  * Build the analysis instruction for a specific recording session.
  */
 function buildInstruction(sessionName: string): string {
-  return `请分析 recordings/${sessionName} 目录下的录制数据，按照 AGENTS.md 中的指示完成分析，并将报告文件保存到对应位置。`;
+  return `"请分析 recordings/${sessionName} 目录下的录制数据，按照 AGENTS.md 中的指示完成分析，并将报告文件保存到对应位置。"`;
 }
 
 export interface AnalyzeOptions {
@@ -19,6 +22,8 @@ export interface AnalyzeOptions {
   workspace: WorkspacePaths;
   sessionDir: string;
   model?: string;
+  /** Callback for real-time log output */
+  onLog?: (line: string) => void;
 }
 
 export interface AnalyzeResult {
@@ -36,17 +41,23 @@ export interface AnalyzeResult {
  * Run AI analysis on a recording session.
  * Returns an AnalyzeResult indicating whether the report was created.
  */
-export async function analyzeRecording(opts: AnalyzeOptions): Promise<AnalyzeResult> {
+export async function analyzeRecording(
+  opts: AnalyzeOptions,
+): Promise<AnalyzeResult> {
   const { backend, workspace, sessionDir, model } = opts;
 
   const sessionName = basename(sessionDir);
-  const reportPath = join(workspace.recordings, sessionName, 'analysis_report.md');
+  const reportPath = join(
+    workspace.recordings,
+    sessionName,
+    "analysis_report.md",
+  );
 
   const startTime = Date.now();
-  if (backend === 'cursor') {
-    await runCursor(workspace.root, sessionName, model);
-  } else if (backend === 'claude') {
-    await runClaude(workspace.root, sessionName);
+  if (backend === "cursor") {
+    await runCursor(workspace.root, sessionName, model, opts.onLog);
+  } else if (backend === "claude") {
+    await runClaude(workspace.root, sessionName, opts.onLog);
   } else {
     throw new Error(`Unsupported analyzer backend: ${backend}`);
   }
@@ -64,35 +75,58 @@ async function runCursor(
   workspaceRoot: string,
   sessionName: string,
   model?: string,
+  onLog?: (line: string) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const instruction = buildInstruction(sessionName);
-    const args = ['agent', instruction, '--yolo'];
+    const args = ["agent", instruction, "--print", "--trust", "--yolo"];
 
     if (model) {
-      args.push('--model', model);
+      args.push("--model", model);
     }
 
-    const child = execFile('cursor', args, {
-      cwd: workspaceRoot,
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 5 * 60 * 1000,
-    }, (error, _stdout, stderr) => {
-      if (error) {
-        if (stderr) {
-          console.error('[analyzer] cursor stderr:', stderr);
+    const child = execFile(
+      "cursor",
+      args,
+      {
+        cwd: workspaceRoot,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 5 * 60 * 1000,
+      },
+      (error, _stdout, stderr) => {
+        if (error) {
+          if (stderr) {
+            console.error("[analyzer] cursor stderr:", stderr);
+          }
+          reject(new Error(`cursor agent failed: ${error.message}`));
+          return;
         }
-        reject(new Error(`cursor agent failed: ${error.message}`));
-        return;
-      }
-      resolve();
-    });
+        resolve();
+      },
+    );
 
-    child.on('error', (err) => {
-      reject(new Error(
-        `Failed to launch cursor agent: ${err.message}. ` +
-        'Ensure Cursor is installed and the `cursor` CLI is on your PATH.',
-      ));
+    if (onLog) {
+      child.stdout?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) onLog(line.trim());
+        }
+      });
+      child.stderr?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) onLog(line.trim());
+        }
+      });
+    }
+
+    child.on("error", (err) => {
+      reject(
+        new Error(
+          `Failed to launch cursor agent: ${err.message}. ` +
+            "Ensure Cursor is installed and the `cursor` CLI is on your PATH.",
+        ),
+      );
     });
   });
 }
@@ -104,31 +138,54 @@ async function runCursor(
 async function runClaude(
   workspaceRoot: string,
   sessionName: string,
+  onLog?: (line: string) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const instruction = buildInstruction(sessionName);
-    const args = [instruction, '--dangerously-skip-permissions'];
+    const args = [instruction, "--dangerously-skip-permissions"];
 
-    const child = execFile('claude', args, {
-      cwd: workspaceRoot,
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 5 * 60 * 1000,
-    }, (error, _stdout, stderr) => {
-      if (error) {
-        if (stderr) {
-          console.error('[analyzer] claude stderr:', stderr);
+    const child = execFile(
+      "claude",
+      args,
+      {
+        cwd: workspaceRoot,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 5 * 60 * 1000,
+      },
+      (error, _stdout, stderr) => {
+        if (error) {
+          if (stderr) {
+            console.error("[analyzer] claude stderr:", stderr);
+          }
+          reject(new Error(`claude failed: ${error.message}`));
+          return;
         }
-        reject(new Error(`claude failed: ${error.message}`));
-        return;
-      }
-      resolve();
-    });
+        resolve();
+      },
+    );
 
-    child.on('error', (err) => {
-      reject(new Error(
-        `Failed to launch claude: ${err.message}. ` +
-        'Ensure Claude Code is installed and the `claude` CLI is on your PATH.',
-      ));
+    if (onLog) {
+      child.stdout?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) onLog(line.trim());
+        }
+      });
+      child.stderr?.on("data", (data) => {
+        const lines = data.toString().split("\n");
+        for (const line of lines) {
+          if (line.trim()) onLog(line.trim());
+        }
+      });
+    }
+
+    child.on("error", (err) => {
+      reject(
+        new Error(
+          `Failed to launch claude: ${err.message}. ` +
+            "Ensure Claude Code is installed and the `claude` CLI is on your PATH.",
+        ),
+      );
     });
   });
 }

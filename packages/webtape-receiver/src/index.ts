@@ -94,7 +94,15 @@ program
           console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…') + chalk.gray(' (预估 1-2min，请稍候)'));
         }
       },
+      onAnalyzeLog(line) {
+        if (opts.autoAnalyze) {
+          process.stdout.write(chalk.gray(`    ${line.length > 80 ? line.slice(0, 77) + '...' : line}\r`));
+        }
+      },
       onAnalyzeDone(result) {
+        if (opts.autoAnalyze) {
+          process.stdout.write(' '.repeat(process.stdout.columns || 80) + '\r');
+        }
         console.log('');
         logAnalyzeResult(result);
       },
@@ -188,6 +196,9 @@ program
         workspace,
         sessionDir,
         model: opts.model,
+        onLog: (line) => {
+          spinner.text = `正在通过 ${backend} 分析会话 ${session}… ${chalk.gray('(预估 1-2min，请稍候)')}\n    ${chalk.gray(line.length > 80 ? line.slice(0, 77) + '...' : line)}`;
+        },
       });
       spinner.stop();
       logAnalyzeResult(result);
@@ -244,6 +255,9 @@ program
           workspace,
           sessionDir,
           model: opts.model,
+          onLog: (line) => {
+            spinner.text = `正在通过 ${backend} 分析会话 ${session}… ${chalk.gray('(预估 1-2min，请稍候)')}\n    ${chalk.gray(line.length > 80 ? line.slice(0, 77) + '...' : line)}`;
+          },
         });
         spinner.stop();
         logAnalyzeResult(result);
