@@ -12,7 +12,7 @@
     "url": "git+https://github.com/FurtherBank/WebTape.git"
   },
   "keywords": ["chrome-extension", "recording", "automation", "llm"],
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "jszip": "^3.10.1"
   }

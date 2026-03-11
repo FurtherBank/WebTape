@@ -14,7 +14,7 @@
 
 **让网页自动化像录屏一样简单。**
 
-WebTape 插件配合 Receiver CLI，能将你在浏览器中的操作，瞬间转化为可直接运行且**不依赖网站 Open API** 的自动化脚本。
+WebTape 插件配合 Receiver CLI，能将你在浏览器中的操作，瞬间转化为可直接运行且**不依赖网站 Open API**的自动化脚本。
 
 - **录制即自动化**：配合 AI 分析，直接理解网页操作并生成可运行的 `request.js` 脚本。
 - **免去逆向工程**：自动处理 Cookie、梳理接口调用链路及参数流转。
@@ -220,3 +220,10 @@ npx webtape-receiver analyze <session-name> --prompt-only
 | `serve` | `--backend` | AI 后端（目前支持 `cursor`） |
 | `analyze` | `--prompt-only` | 仅生成提示词文件 |
 | `analyze` | `--backend` | AI 后端 |
+
+---
+
+## 📄 开源协议
+
+基于 **MIT** 协议开源。
+
