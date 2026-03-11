@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, relative } from "node:path";
 import type { WorkspacePaths } from "./workspace.js";
 
 export type AnalyzerBackend = "cursor" | "claude";
@@ -46,7 +46,7 @@ export async function analyzeRecording(
 ): Promise<AnalyzeResult> {
   const { backend, workspace, sessionDir, model } = opts;
 
-  const sessionName = basename(sessionDir);
+  const sessionName = relative(workspace.recordings, sessionDir);
   const reportPath = join(
     workspace.recordings,
     sessionName,

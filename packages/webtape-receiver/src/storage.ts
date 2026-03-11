@@ -4,27 +4,12 @@ import type { WorkspacePaths } from './workspace.js';
 import type { WebTapePayload } from './types.js';
 
 /**
- * Extract the registered domain (一级域名) from a URL string.
- * e.g. "https://www.github.com/page" → "github.com"
+ * Extract the full hostname from a URL string.
+ * e.g. "https://www.github.com/page" → "www.github.com"
  */
-export function extractDomain(url: string): string {
+export function extractHostname(url: string): string {
   try {
-    const hostname = new URL(url).hostname;
-    const clean = hostname.replace(/^www\./, '');
-    // IP addresses: keep as-is
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(clean)) {
-      return clean;
-    }
-    // Get registered domain
-    const parts = clean.split('.');
-    if (parts.length <= 2) return clean;
-    // Common multi-part TLDs (e.g. co.uk, com.cn, co.jp, etc.)
-    const multiPartTlds = ['co.uk', 'com.cn', 'com.au', 'co.jp', 'co.kr', 'com.br', 'com.tw', 'com.hk', 'org.uk', 'net.au'];
-    const lastTwo = parts.slice(-2).join('.');
-    if (multiPartTlds.includes(lastTwo) && parts.length > 2) {
-      return parts.slice(-3).join('.');
-    }
-    return parts.slice(-2).join('.');
+    return new URL(url).hostname;
   } catch {
     return 'unknown';
   }
@@ -43,25 +28,38 @@ function extractSiteUrl(payload: WebTapePayload): string {
 
 /**
  * Build the session directory name from the payload.
- * Format: ${domain}-${MMDD}-${HHmmss}
- * e.g. "github.com-0305-123000"
+ * Format: ${hostname}/${MMDD}-${HHmmss}
+ * e.g. "www.github.com/0305-123000"
  */
 function sessionDirName(payload: WebTapePayload): string {
   const d = new Date(payload.meta.epoch);
   const pad = (n: number, len = 2) => String(n).padStart(len, '0');
 
-  const domain = extractDomain(extractSiteUrl(payload)) || 'unknown';
+  const hostname = payload.meta.hostname || extractHostname(extractSiteUrl(payload)) || 'unknown';
   const datePart = `${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   const timePart = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 
-  return `${domain}-${datePart}-${timePart}`;
+  return `${hostname}/${datePart}-${timePart}`;
 }
 
 /**
  * Parse a session directory name back into its components.
- * Format: ${domain}-${MMDD}-${HHmmss}
+ * New format: ${hostname}/${MMDD}-${HHmmss}
+ * Legacy format: ${domain}-${MMDD}-${HHmmss}
  */
 export function parseSessionName(name: string): { domain: string; date: string; time: string } {
+  const slashIdx = name.lastIndexOf('/');
+  if (slashIdx !== -1) {
+    // New format: hostname/MMDD-HHmmss
+    const domain = name.slice(0, slashIdx);
+    const timePart = name.slice(slashIdx + 1);
+    const dashIdx = timePart.indexOf('-');
+    if (dashIdx !== -1) {
+      return { domain, date: timePart.slice(0, dashIdx), time: timePart.slice(dashIdx + 1) };
+    }
+    return { domain, date: timePart, time: '' };
+  }
+  // Legacy format: domain-MMDD-HHmmss
   const lastDash = name.lastIndexOf('-');
   const time = name.slice(lastDash + 1);
   const rest = name.slice(0, lastDash);
@@ -135,15 +133,45 @@ export function saveRecording(
 }
 
 /**
- * List existing recording sessions (directory names) sorted newest-first.
+ * List existing recording sessions sorted newest-first.
+ * Supports both new format (hostname/MMDD-HHmmss) and legacy flat format.
  */
 export function listRecordings(workspace: WorkspacePaths): string[] {
   try {
-    return readdirSync(workspace.recordings, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .sort()
-      .reverse();
+    const results: string[] = [];
+    const topDirs = readdirSync(workspace.recordings, { withFileTypes: true })
+      .filter((d) => d.isDirectory());
+
+    for (const dir of topDirs) {
+      const dirPath = join(workspace.recordings, dir.name);
+
+      // Legacy flat format: session dir contains index.json directly
+      if (existsSync(join(dirPath, 'index.json'))) {
+        results.push(dir.name);
+        continue;
+      }
+
+      // New format: hostname dir contains session subdirectories
+      const subDirs = readdirSync(dirPath, { withFileTypes: true })
+        .filter((d) => d.isDirectory());
+
+      for (const sub of subDirs) {
+        if (existsSync(join(dirPath, sub.name, 'index.json'))) {
+          results.push(`${dir.name}/${sub.name}`);
+        }
+      }
+    }
+
+    // Sort by date-time newest-first
+    results.sort((a, b) => {
+      const aParsed = parseSessionName(a);
+      const bParsed = parseSessionName(b);
+      const aKey = `${aParsed.date}-${aParsed.time}`;
+      const bKey = `${bParsed.date}-${bParsed.time}`;
+      return bKey.localeCompare(aKey);
+    });
+
+    return results;
   } catch {
     return [];
   }

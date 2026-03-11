@@ -7,6 +7,7 @@ export interface WebTapePayload {
     epoch: number;
     version: string;
     source: string;
+    hostname?: string;
   };
   content: {
     'index.json': ContextBlock[];
