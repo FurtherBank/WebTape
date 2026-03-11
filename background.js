@@ -744,6 +744,15 @@ async function stopAndExport() {
         throw new Error('Webhook URL must use http or https protocol.');
       }
 
+      // Extract hostname from the first timeline entry's URL
+      let siteHostname = '';
+      try {
+        const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
+        if (siteUrl) {
+          siteHostname = new URL(siteUrl).hostname;
+        }
+      } catch (_e) { /* ignore */ }
+
       const now = new Date();
       const payload = {
         meta: {
@@ -751,6 +760,7 @@ async function stopAndExport() {
           epoch: now.getTime(),
           version: chrome.runtime.getManifest().version,
           source: 'WebTape',
+          hostname: siteHostname || undefined,
         },
         content: {
           'index.json': indexData,
@@ -799,14 +809,12 @@ async function stopAndExport() {
 
       const dataUrl = 'data:application/zip;base64,' + base64;
 
-      // Extract domain from the first timeline entry's URL
+      // Extract hostname from the first timeline entry's URL
       let domain = 'unknown';
       try {
         const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
         if (siteUrl) {
-          const hostname = new URL(siteUrl).hostname.replace(/^www\./, '');
-          const parts = hostname.split('.');
-          domain = parts.length <= 2 ? hostname : parts.slice(-2).join('.');
+          domain = new URL(siteUrl).hostname;
         }
       } catch (_e) { /* keep default */ }
 
