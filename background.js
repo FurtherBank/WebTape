@@ -726,6 +726,15 @@ async function stopAndExport() {
   }
 
   try {
+    // Extract hostname from the first timeline entry's URL (shared by both export modes)
+    let siteHostname = '';
+    try {
+      const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
+      if (siteUrl) {
+        siteHostname = new URL(siteUrl).hostname;
+      }
+    } catch (_e) { /* ignore */ }
+
     if (exportMode === 'webhook') {
       // Webhook: send full data as JSON POST
       const webhookUrlStr = (settings.webhookUrl || '').trim();
@@ -743,15 +752,6 @@ async function stopAndExport() {
       if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
         throw new Error('Webhook URL must use http or https protocol.');
       }
-
-      // Extract hostname from the first timeline entry's URL
-      let siteHostname = '';
-      try {
-        const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
-        if (siteUrl) {
-          siteHostname = new URL(siteUrl).hostname;
-        }
-      } catch (_e) { /* ignore */ }
 
       const now = new Date();
       const payload = {
@@ -809,14 +809,7 @@ async function stopAndExport() {
 
       const dataUrl = 'data:application/zip;base64,' + base64;
 
-      // Extract hostname from the first timeline entry's URL
-      let domain = 'unknown';
-      try {
-        const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
-        if (siteUrl) {
-          domain = new URL(siteUrl).hostname;
-        }
-      } catch (_e) { /* keep default */ }
+      const domain = siteHostname || 'unknown';
 
       const now = new Date();
       const pad = (n, len = 2) => String(n).padStart(len, '0');
