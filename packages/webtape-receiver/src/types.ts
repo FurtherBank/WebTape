@@ -47,6 +47,7 @@ export interface NetworkSummary {
     request: string;
     response: string;
   };
+  response_body_bytes?: number;
 }
 
 export interface RequestEntry {

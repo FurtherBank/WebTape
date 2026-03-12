@@ -524,6 +524,20 @@ function toNetworkSummary(entry) {
       response: `responses/${entry.reqId}_res.json`,
     },
   };
+
+  if (entry.status >= 200 && entry.status < 300) {
+    const body = entry.entryType === 'sse'
+      ? entry.sseEvents
+      : entry.entryType === 'websocket'
+        ? entry.wsMessages
+        : entry.responseBody;
+
+    if (body != null) {
+      const raw = typeof body === 'string' ? body : JSON.stringify(body);
+      summary.response_body_bytes = new TextEncoder().encode(raw).byteLength;
+    }
+  }
+
   return summary;
 }
 
