@@ -78,6 +78,24 @@ export function formatTime(time: string): string {
 }
 
 /**
+ * If `body` is a JSON string, parse it into an object so it is saved as
+ * nested JSON rather than an escaped string.
+ */
+function withParsedJsonBody<T extends { body?: unknown }>(entry: T): T {
+  if (typeof entry.body === 'string') {
+    try {
+      const parsed = JSON.parse(entry.body);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return { ...entry, body: parsed };
+      }
+    } catch {
+      // not valid JSON – keep the original string
+    }
+  }
+  return entry;
+}
+
+/**
  * Persist a webhook payload to the workspace as structured files:
  *
  *   recordings/<session>/
@@ -110,7 +128,7 @@ export function saveRecording(
   for (const [filename, data] of Object.entries(payload.content.requests)) {
     writeFileSync(
       join(reqDir, filename),
-      JSON.stringify(data, null, 2),
+      JSON.stringify(withParsedJsonBody(data), null, 2),
       'utf-8',
     );
   }
@@ -118,7 +136,7 @@ export function saveRecording(
   for (const [filename, data] of Object.entries(payload.content.responses)) {
     writeFileSync(
       join(resDir, filename),
-      JSON.stringify(data, null, 2),
+      JSON.stringify(withParsedJsonBody(data), null, 2),
       'utf-8',
     );
   }

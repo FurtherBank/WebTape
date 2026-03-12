@@ -694,6 +694,15 @@ async function stopAndExport() {
   const requestsData = {};
   const responsesData = {};
 
+  function tryParseJson(str) {
+    if (typeof str !== 'string') return str;
+    try {
+      const parsed = JSON.parse(str);
+      if (typeof parsed === 'object' && parsed !== null) return parsed;
+    } catch (_e) { /* not valid JSON */ }
+    return str;
+  }
+
   for (const entry of allRequests) {
     const reqPayload = {
       req_id: entry.reqId,
@@ -701,7 +710,7 @@ async function stopAndExport() {
       method: entry.method,
       url: entry.url,
       headers: entry.requestHeaders,
-      body: entry.requestBody,
+      body: tryParseJson(entry.requestBody),
     };
     requestsData[`${entry.reqId}_body.json`] = reqPayload;
 
@@ -719,7 +728,7 @@ async function stopAndExport() {
     } else if (entry.entryType === 'websocket') {
       resPayload.body = entry.wsMessages || [];
     } else {
-      resPayload.body = entry.responseBody;
+      resPayload.body = tryParseJson(entry.responseBody);
     }
 
     responsesData[`${entry.reqId}_res.json`] = resPayload;
