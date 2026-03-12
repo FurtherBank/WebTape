@@ -14,7 +14,7 @@ export const VALID_BACKENDS: readonly AnalyzerBackend[] = [
  * Build the analysis instruction for a specific recording session.
  */
 function buildInstruction(sessionName: string): string {
-  return `"请分析 recordings/${sessionName} 目录下的录制数据，按照 AGENTS.md 中的指示完成分析，并将报告文件保存到对应位置。"`;
+  return `"请先阅读 recordings/${sessionName}/_context.md 了解录制数据全貌，然后按照 AGENTS.md 中的指示完成分析，并将报告文件保存到对应位置。如需查看被截断的完整请求/响应体，请查阅 requests/ 和 responses/ 目录下的原始文件。"`;
 }
 
 export interface AnalyzeOptions {
