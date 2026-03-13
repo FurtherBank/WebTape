@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc && node scripts/pack-workspace.js",
     "dev": "tsx src/index.ts",
+    "ws": "ln -snf ~/Desktop/WebTape WebTape && echo '✅ ~/Desktop/WebTape → WebTape'",
     "start": "npm run build && npm link && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape-receiver 已完成编译并链接，现在你可以直接在终端输入 \\x1b[36mwebtape-receiver\\x1b[0m 进行本地测试。'",
     "prepublishOnly": "npm run build"
   },
@@ -36,11 +37,13 @@
     "adm-zip": "^0.5.16",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
+    "ejs": "^5.0.1",
     "minimatch": "^10.2.4",
     "ora": "^8.1.0"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
+    "@types/ejs": "^3.1.5",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

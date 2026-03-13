@@ -1,0 +1,63 @@
+# 录制数据分析上下文
+
+> 此文件由 webtape-receiver 自动生成，将录制的时间线、请求和响应整合为单一文档。
+> 已过滤无关请求头（缓存、安全策略、编码等），超大 body 已截断。如需完整数据请查阅 requests/ 和 responses/ 目录。
+
+## 元数据
+
+- 录制时间: <%- meta.timestamp %>
+<% if (meta.hostname) { -%>
+- 网站: <%- meta.hostname %>
+<% } -%>
+<% if (siteUrl) { -%>
+- 入口 URL: <%- siteUrl %>
+<% } -%>
+- 时间线条目: <%- timeline.length %>
+- 请求总数: <%- requestCount %>
+
+## 操作时间线与接口详情
+
+<% timeline.forEach((block, i) => { -%>
+### [<%- i + 1 %>] <%- describeBlock(block) %>
+
+<% if (block.state) { -%>
+- URL: <%- block.state.url %>
+- 标题: <%- block.state.title %>
+
+<% } -%>
+<% if (block.action) { -%>
+- 操作类型: <%- block.action.type %>
+- 目标元素: `<%- block.action.tag %><%- block.action.id ? '#' + block.action.id : '' %>`<%- block.action.target_element ? ' — ' + block.action.target_element : '' %>
+<% if (block.action.aria_label) { -%>
+- aria-label: <%- block.action.aria_label %>
+<% } -%>
+
+<% } -%>
+<% if (block.triggered_network && block.triggered_network.length > 0) { -%>
+**触发的网络请求 (<%- block.triggered_network.length %> 个):**
+
+<% block.triggered_network.forEach((net) => { -%>
+<%- renderNetworkEntry(net) %>
+<% }); -%>
+<% } -%>
+<% if (block.post_action_a11y_tree_summary) { -%>
+<details>
+<summary>操作后页面状态 (a11y tree<%= block.post_action_a11y_tree_summary_length != null ? ', ' + block.post_action_a11y_tree_summary_length + ' chars' : '' %>)</summary>
+
+```
+<%- block.post_action_a11y_tree_summary %>
+```
+
+</details>
+
+<% } -%>
+---
+
+<% }); -%>
+<% if (orphanRequests.length > 0) { -%>
+## 其他网络请求（未关联到操作时间线）
+
+<% orphanRequests.forEach((req) => { -%>
+- **<%- req.method %> <%- req.url %>** → <%- req.status %><%- req.sizeHint %>
+<% }); -%>
+<% } -%>

@@ -35,6 +35,7 @@ export interface ContextBlock {
   };
   triggered_network?: NetworkSummary[] | null;
   post_action_a11y_tree_summary?: string | null;
+  post_action_a11y_tree_summary_length?: number | null;
 }
 
 export interface NetworkSummary {
