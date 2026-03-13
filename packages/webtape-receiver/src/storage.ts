@@ -109,23 +109,58 @@ export function saveRecording(
   mkdirSync(reqDir, { recursive: true });
   mkdirSync(resDir, { recursive: true });
 
+  // Create a mapping of original req_id to sequential ID (0001, 0002, ...)
+  const allReqIds = Object.keys(payload.content.requests)
+    .map(filename => filename.replace('_body.json', ''))
+    .sort((a, b) => {
+      // Extract timestamp from req_id (e.g., req_0001_1773381143117)
+      const tA = parseInt(a.split('_').pop() || '0', 10);
+      const tB = parseInt(b.split('_').pop() || '0', 10);
+      return tA - tB;
+    });
+
+  const idMap = new Map<string, string>();
+  allReqIds.forEach((oldId, index) => {
+    idMap.set(oldId, String(index + 1).padStart(4, '0'));
+  });
+
+  // Update index.json with new req_ids
+  const updatedIndex = payload.content['index.json'].map(block => ({
+    ...block,
+    triggered_network: block.triggered_network?.map(net => ({
+      ...net,
+      req_id: idMap.get(net.req_id) || net.req_id
+    }))
+  }));
+
   writeFileSync(
     join(sessionDir, 'index.json'),
-    JSON.stringify(payload.content['index.json'], null, 2),
+    JSON.stringify(updatedIndex, null, 2),
     'utf-8',
   );
 
   for (const [filename, data] of Object.entries(payload.content.requests)) {
+    const oldId = filename.replace('_body.json', '');
+    const newId = idMap.get(oldId) || oldId;
+    const newFilename = `req_${newId}_body.json`;
+    
+    // Add original timestamp/id to data for reference
+    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldId };
+
     writeFileSync(
-      join(reqDir, filename),
-      JSON.stringify(withParsedJsonBody(data), null, 2),
+      join(reqDir, newFilename),
+      JSON.stringify(enrichedData, null, 2),
       'utf-8',
     );
   }
 
   for (const [filename, data] of Object.entries(payload.content.responses)) {
+    const oldId = filename.replace('_res.json', '');
+    const newId = idMap.get(oldId) || oldId;
+    const newFilename = `req_${newId}_res.json`;
+
     writeFileSync(
-      join(resDir, filename),
+      join(resDir, newFilename),
       JSON.stringify(withParsedJsonBody(data), null, 2),
       'utf-8',
     );

@@ -58,6 +58,6 @@
 ## 其他网络请求（未关联到操作时间线）
 
 <% orphanRequests.forEach((req) => { -%>
-- **<%- req.method %> <%- req.url %>** → <%- req.status %><%- req.sizeHint %>
+- **[<%- req.id %>] <%- req.method %> <%- req.url %>** → <%- req.status %><%- req.sizeHint %>
 <% }); -%>
 <% } -%>

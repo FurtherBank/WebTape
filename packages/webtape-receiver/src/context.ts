@@ -161,15 +161,51 @@ function renderRequestBody(body: unknown, headers: Record<string, string> | null
 // ---------------------------------------------------------------------------
 
 function describeBlock(block: ContextBlock): string {
+  if (block.state) {
+    return `页面状态: ${block.state.title || block.state.url}`;
+  }
   if (block.action) {
     const tag = block.action.tag || '';
     const label = block.action.aria_label || block.action.id || block.action.target_element || '';
     return `用户操作: ${block.action.type} ${tag}${label ? ' "' + label + '"' : ''}`;
   }
-  if (block.state) {
-    return `页面状态: ${block.state.title || block.state.url}`;
-  }
   return `上下文 ${block.context_id}`;
+}
+
+function isAllowedProtocol(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol.toLowerCase();
+    return protocol !== 'http:' && protocol !== 'ws:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Filter and sort timeline blocks.
+ * 1. Remove the first block if it's a CLICK action (often a mis-capture during recording start).
+ * 2. Ensure blocks are sorted by timestamp.
+ * 3. Filter out network requests with disallowed protocols (http, ws).
+ */
+function processTimeline(timeline: ContextBlock[]): ContextBlock[] {
+  if (timeline.length === 0) return [];
+
+  // Sort by timestamp just in case
+  const sorted = [...timeline].sort((a, b) => a.timestamp - b.timestamp);
+
+  // If the first block is a CLICK action, it's likely a mis-capture of the "Start Recording" click
+  let result = sorted;
+  if (sorted[0].action?.type === 'CLICK') {
+    result = sorted.slice(1);
+  }
+
+  // Filter triggered network requests in each block
+  return result.map((block) => ({
+    ...block,
+    triggered_network: block.triggered_network
+      ? block.triggered_network.filter((net) => isAllowedProtocol(net.url))
+      : block.triggered_network,
+  }));
 }
 
 /**
@@ -186,7 +222,7 @@ function makeNetworkEntryRenderer(
     const resData = responses[`${net.req_id}_res.json`];
 
     const sizeHint = net.response_body_bytes != null ? ` (${fmtBytes(net.response_body_bytes)})` : '';
-    lines.push(`#### ${net.method} ${net.url} → ${net.status ?? '?'}${sizeHint}`);
+    lines.push(`#### [${net.req_id}] ${net.method} ${net.url} → ${net.status ?? '?'}${sizeHint}`);
     lines.push('');
 
     if (reqData) {
@@ -224,15 +260,16 @@ function makeNetworkEntryRenderer(
 }
 
 interface OrphanRequest {
+  id: string;
   method: string;
   url: string;
   status: string | number;
   sizeHint: string;
 }
 
-function collectOrphanRequests(payload: WebTapePayload): OrphanRequest[] {
+function collectOrphanRequests(payload: WebTapePayload, processedTimeline: ContextBlock[]): OrphanRequest[] {
   const referenced = new Set<string>();
-  for (const block of payload.content['index.json']) {
+  for (const block of processedTimeline) {
     if (block.triggered_network) {
       for (const net of block.triggered_network) referenced.add(net.req_id);
     }
@@ -244,14 +281,14 @@ function collectOrphanRequests(payload: WebTapePayload): OrphanRequest[] {
     if (referenced.has(reqId)) continue;
     const reqData = payload.content.requests[key];
     const resData = payload.content.responses[`${reqId}_res.json`];
-    if (!reqData) continue;
+    if (!reqData || !isAllowedProtocol(reqData.url)) continue;
 
     let sizeHint = '';
     if (resData?.body != null) {
       const raw = typeof resData.body === 'string' ? resData.body : JSON.stringify(resData.body);
       sizeHint = ` (${fmtBytes(Buffer.byteLength(raw, 'utf-8'))})`;
     }
-    orphans.push({ method: reqData.method, url: reqData.url, status: resData?.status ?? '?', sizeHint });
+    orphans.push({ id: reqId, method: reqData.method, url: reqData.url, status: resData?.status ?? '?', sizeHint });
   }
   return orphans;
 }
@@ -269,13 +306,14 @@ export function extractSiteUrl(payload: WebTapePayload): string {
 
 export function renderAnalysisContext(payload: WebTapePayload, siteUrl: string): string {
   const { requests, responses } = payload.content;
+  const timeline = processTimeline(payload.content['index.json']);
 
   return ejs.render(loadTemplate(), {
     meta: payload.meta,
     siteUrl,
-    timeline: payload.content['index.json'],
+    timeline,
     requestCount: Object.keys(requests).length,
-    orphanRequests: collectOrphanRequests(payload),
+    orphanRequests: collectOrphanRequests(payload, timeline),
     describeBlock,
     renderNetworkEntry: makeNetworkEntryRenderer(requests, responses),
   });
