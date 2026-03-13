@@ -42,7 +42,7 @@
 <% } -%>
 <% if (block.post_action_a11y_tree_summary) { -%>
 <details>
-<summary>操作后页面状态 (a11y tree)</summary>
+<summary>操作后页面状态 (a11y tree<%= block.post_action_a11y_tree_summary_length != null ? ', ' + block.post_action_a11y_tree_summary_length + ' chars' : '' %>)</summary>
 
 ```
 <%- block.post_action_a11y_tree_summary %>

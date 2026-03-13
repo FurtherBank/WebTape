@@ -53,6 +53,10 @@ let networkIdleTimer = null;
 // Constants
 const NETWORK_IDLE_DELAY_MS = 1500; // ms of network silence before capturing post-action A11y
 const ACTION_WINDOW_MS = 2000;      // ms sliding window to associate requests with an action
+const RECORDING_GRACE_MS = 800;     // ignore user actions within this window after recording starts
+
+/** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
+let recordingStartTime = 0;
 
 // Resource types from CDP that represent API / data requests we want to capture.
 const ALLOWED_RESOURCE_TYPES = new Set([
@@ -456,6 +460,7 @@ function associateRequestWithActions(entry) {
  */
 function handleUserAction(payload) {
   if (recorderState !== 'recording') return;
+  if (Date.now() - recordingStartTime < RECORDING_GRACE_MS) return;
 
   const contextId = nextContextId();
   const now = performance.now();
@@ -562,6 +567,7 @@ async function onNetworkIdle() {
     const block = timeline[i];
     if (block.action && block.post_action_a11y_tree_summary === null) {
       block.post_action_a11y_tree_summary = a11ySummary;
+      block.post_action_a11y_tree_summary_length = a11ySummary ? a11ySummary.length : 0;
       break;
     }
   }
@@ -632,6 +638,7 @@ async function startRecording(tabId, refreshFirst) {
       a11y_tree_summary: initialA11y,
     },
   });
+  recordingStartTime = Date.now();
   console.log('[WebTape] Recording started successfully.');
 }
 
@@ -700,6 +707,7 @@ async function stopAndExport() {
     }
     if (block.post_action_a11y_tree_summary !== undefined) {
       entry.post_action_a11y_tree_summary = block.post_action_a11y_tree_summary;
+      entry.post_action_a11y_tree_summary_length = block.post_action_a11y_tree_summary_length ?? null;
     }
     return entry;
   });
