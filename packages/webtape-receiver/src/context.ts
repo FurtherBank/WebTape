@@ -103,6 +103,59 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+function getContentType(headers: Record<string, string> | null | undefined): string | null {
+  if (!headers) return null;
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'content-type') return value.split(';')[0].trim();
+  }
+  return null;
+}
+
+/**
+ * Render request body info for the network entry summary.
+ * - JSON + small: show content-type, size, and inline JSON
+ * - Other / large: show content-type and size only
+ * - No body: return null (caller skips)
+ */
+function renderRequestBody(body: unknown, headers: Record<string, string> | null | undefined): string[] | null {
+  if (body == null) return null;
+  if (typeof body === 'string' && body.length === 0) return null;
+
+  const lines: string[] = [];
+  const contentType = getContentType(headers);
+
+  let raw: string;
+  let isJson = false;
+
+  if (typeof body === 'string') {
+    raw = body;
+    if (raw.trimStart().startsWith('{') || raw.trimStart().startsWith('[')) {
+      try {
+        raw = JSON.stringify(JSON.parse(raw), null, 2);
+        isJson = true;
+      } catch { /* not JSON */ }
+    }
+  } else {
+    raw = JSON.stringify(body, null, 2);
+    isJson = true;
+  }
+
+  const byteSize = Buffer.byteLength(raw, 'utf-8');
+  const typePart = contentType ?? (isJson ? 'application/json' : 'text/plain');
+  const meta = `${typePart}, ${fmtBytes(byteSize)}`;
+
+  if (isJson && raw.length <= BODY_FULL_LIMIT) {
+    lines.push(`入参 (${meta}):`);
+    lines.push('```json');
+    lines.push(raw);
+    lines.push('```');
+  } else {
+    lines.push(`入参: ${meta}`);
+  }
+
+  return lines;
+}
+
 // ---------------------------------------------------------------------------
 // Template helpers (passed to EJS as locals)
 // ---------------------------------------------------------------------------
@@ -144,14 +197,8 @@ function makeNetworkEntryRenderer(
         lines.push(hdr);
         lines.push('```');
       }
-      const body = renderBody(reqData.body);
-      if (body) {
-        const note = body.truncated ? ` (${fmtBytes(body.byteSize)}, 已截断)` : '';
-        lines.push(`请求体${note}:`);
-        lines.push('```' + body.lang);
-        lines.push(body.text);
-        lines.push('```');
-      }
+      const reqBody = renderRequestBody(reqData.body, reqData.headers);
+      if (reqBody) lines.push(...reqBody);
     }
 
     if (resData) {
