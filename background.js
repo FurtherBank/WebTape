@@ -58,6 +58,15 @@ const RECORDING_GRACE_MS = 800;     // ignore user actions within this window af
 /** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
 let recordingStartTime = 0;
 
+// Initial-load attribution: collects requests from recording start until the
+// first user action or network idle, then attaches them to the INITIAL_LOAD block.
+/** @type {boolean} */
+let initialLoadOpen = false;
+/** @type {NetworkEntry[]} */
+let initialLoadRequests = [];
+/** @type {ContextBlock|null} */
+let initialLoadBlock = null;
+
 // Resource types from CDP that represent API / data requests we want to capture.
 const ALLOWED_RESOURCE_TYPES = new Set([
   'XHR', 'Fetch', 'WebSocket', 'EventSource', 'Other',
@@ -112,7 +121,7 @@ function nextContextId() {
 }
 
 function nextRequestId() {
-  return `req_${String(++requestCounter).padStart(4, '0')}_${Date.now()}`;
+  return `req_${String(++requestCounter).padStart(4, '0')}`;
 }
 
 function resetSession() {
@@ -124,6 +133,9 @@ function resetSession() {
   contextCounter = 0;
   requestCounter = 0;
   networkIdleTimer = null;
+  initialLoadOpen = false;
+  initialLoadRequests = [];
+  initialLoadBlock = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +214,9 @@ function summariseA11yNodes(nodes) {
 // ---------------------------------------------------------------------------
 
 function handleRequestWillBeSent(params) {
-  if (!shouldCaptureByType(params.type, params.request.url)) return;
+  const url = params.request.url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+  if (!shouldCaptureByType(params.type, url)) return;
 
   const reqId = nextRequestId();
   /** @type {NetworkEntry} */
@@ -317,6 +331,9 @@ async function handleLoadingFinished(params) {
  * CDP fires this before the HTTP upgrade handshake.
  */
 function handleWebSocketCreated(params) {
+  const url = params.url;
+  if (!url.startsWith('ws://') && !url.startsWith('wss://') &&
+      !url.startsWith('http://') && !url.startsWith('https://')) return;
   const reqId = nextRequestId();
   /** @type {NetworkEntry} */
   const entry = {
@@ -446,6 +463,11 @@ function handleWebSocketClosed(params) {
  */
 
 function associateRequestWithActions(entry) {
+  // Collect for INITIAL_LOAD attribution if the window is still open
+  if (initialLoadOpen) {
+    initialLoadRequests.push(entry);
+  }
+
   const now = performance.now();
   for (const pa of pendingActions) {
     if (now <= pa.openUntil) {
@@ -455,12 +477,26 @@ function associateRequestWithActions(entry) {
 }
 
 /**
+ * Close the initial-load attribution window and populate triggered_network
+ * on the INITIAL_LOAD context block.
+ */
+function finaliseInitialLoad() {
+  if (!initialLoadOpen || !initialLoadBlock) return;
+  initialLoadOpen = false;
+  initialLoadBlock.triggered_network = initialLoadRequests.map(toNetworkSummary);
+  initialLoadRequests = [];
+}
+
+/**
  * Receive a user action from the content script, open a sliding window,
  * and push a new context block placeholder to the timeline.
  */
 function handleUserAction(payload) {
   if (recorderState !== 'recording') return;
   if (Date.now() - recordingStartTime < RECORDING_GRACE_MS) return;
+
+  // First user action closes the INITIAL_LOAD attribution window
+  finaliseInitialLoad();
 
   const contextId = nextContextId();
   const now = performance.now();
@@ -559,6 +595,9 @@ async function onNetworkIdle() {
   networkIdleTimer = null;
   if (recorderState !== 'recording') return;
 
+  // Network idle closes the INITIAL_LOAD attribution window (if still open)
+  finaliseInitialLoad();
+
   // Capture A11y snapshot for the most recently finalised action context
   const a11ySummary = await captureA11ySummary();
 
@@ -588,6 +627,9 @@ async function startRecording(tabId, refreshFirst) {
   resetSession();
   activeTabId = tabId;
   recorderState = 'recording';
+
+  // Begin collecting requests for INITIAL_LOAD attribution
+  initialLoadOpen = true;
 
   // Attach debugger
   await new Promise((resolve, reject) => {
@@ -627,7 +669,7 @@ async function startRecording(tabId, refreshFirst) {
   console.log('[WebTape] Capturing initial page info and A11y snapshot…');
   const tab = await chrome.tabs.get(tabId);
   const initialA11y = await captureA11ySummary();
-  timeline.push({
+  const initialBlock = {
     context_id: nextContextId(),
     timestamp: Date.now(),
     state: {
@@ -637,7 +679,10 @@ async function startRecording(tabId, refreshFirst) {
       fav_icon_url: tab.favIconUrl || '',
       a11y_tree_summary: initialA11y,
     },
-  });
+    triggered_network: null,
+  };
+  timeline.push(initialBlock);
+  initialLoadBlock = initialBlock;
   recordingStartTime = Date.now();
   console.log('[WebTape] Recording started successfully.');
 }
@@ -690,6 +735,9 @@ async function stopAndExport() {
 
   finalizeOpenEntries(pendingRequests, (e) => e.entryType === 'sse');
   finalizeOpenEntries(pendingWebSockets);
+
+  // Ensure INITIAL_LOAD attribution is finalized before export
+  finaliseInitialLoad();
 
   const allRequests = [...completedRequests.values()];
 

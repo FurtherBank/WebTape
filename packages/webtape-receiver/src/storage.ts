@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
-import type { WebTapePayload } from './types.js';
+import type { WebTapePayload, RequestEntry, ResponseEntry } from './types.js';
 import { extractSiteUrl, renderAnalysisContext } from './context.js';
 
 /**
@@ -124,8 +124,8 @@ export function saveRecording(
     idMap.set(oldId, String(index + 1).padStart(4, '0'));
   });
 
-  // Update index.json with new req_ids
-  const updatedIndex = payload.content['index.json'].map(block => ({
+  // Remap index.json with clean sequential IDs
+  const remappedIndex = payload.content['index.json'].map(block => ({
     ...block,
     triggered_network: block.triggered_network?.map(net => ({
       ...net,
@@ -133,9 +133,13 @@ export function saveRecording(
     }))
   }));
 
+  // Build remapped request/response dicts with clean IDs (used for _context.md)
+  const remappedRequests: Record<string, RequestEntry> = {};
+  const remappedResponses: Record<string, ResponseEntry> = {};
+
   writeFileSync(
     join(sessionDir, 'index.json'),
-    JSON.stringify(updatedIndex, null, 2),
+    JSON.stringify(remappedIndex, null, 2),
     'utf-8',
   );
 
@@ -143,15 +147,14 @@ export function saveRecording(
     const oldId = filename.replace('_body.json', '');
     const newId = idMap.get(oldId) || oldId;
     const newFilename = `req_${newId}_body.json`;
-    
-    // Add original timestamp/id to data for reference
-    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldId };
 
+    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldId };
     writeFileSync(
       join(reqDir, newFilename),
       JSON.stringify(enrichedData, null, 2),
       'utf-8',
     );
+    remappedRequests[`${newId}_body.json`] = { ...data, req_id: newId };
   }
 
   for (const [filename, data] of Object.entries(payload.content.responses)) {
@@ -164,6 +167,7 @@ export function saveRecording(
       JSON.stringify(withParsedJsonBody(data), null, 2),
       'utf-8',
     );
+    remappedResponses[`${newId}_res.json`] = { ...data, req_id: newId };
   }
 
   writeFileSync(
@@ -172,10 +176,19 @@ export function saveRecording(
     'utf-8',
   );
 
-  const siteUrl = extractSiteUrl(payload);
+  // Render _context.md using remapped payload so IDs are clean sequential numbers
+  const remappedPayload: WebTapePayload = {
+    ...payload,
+    content: {
+      'index.json': remappedIndex,
+      requests: remappedRequests,
+      responses: remappedResponses,
+    },
+  };
+  const siteUrl = extractSiteUrl(remappedPayload);
   writeFileSync(
     join(sessionDir, '_context.md'),
-    renderAnalysisContext(payload, siteUrl),
+    renderAnalysisContext(remappedPayload, siteUrl),
     'utf-8',
   );
 
