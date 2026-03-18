@@ -40,13 +40,16 @@
 <%- renderNetworkEntry(net) %>
 <% }); -%>
 <% } -%>
-<% if (block.post_action_a11y_tree_summary) { -%>
+<% if (block.snapshot_id) { -%>
+<% const _snapshotText = snapshots[block.snapshot_id]; -%>
 <details>
-<summary>操作后页面状态 (a11y tree<%= block.post_action_a11y_tree_summary_length != null ? ', ' + block.post_action_a11y_tree_summary_length + ' chars' : '' %>)</summary>
+<summary>操作后页面状态 (a11y tree 快照 → <code>snapshots/snapshot_<%- block.snapshot_id %>.md</code><%= _snapshotText ? ', ' + _snapshotText.length + ' chars' : '' %>)</summary>
 
+<% if (_snapshotText) { -%>
 ```
-<%- block.post_action_a11y_tree_summary %>
+<%- _snapshotText %>
 ```
+<% } -%>
 
 </details>
 

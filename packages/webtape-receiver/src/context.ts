@@ -305,13 +305,14 @@ export function extractSiteUrl(payload: WebTapePayload): string {
 }
 
 export function renderAnalysisContext(payload: WebTapePayload, siteUrl: string): string {
-  const { requests, responses } = payload.content;
+  const { requests, responses, snapshots = {} } = payload.content;
   const timeline = processTimeline(payload.content['index.json']);
 
   return ejs.render(loadTemplate(), {
     meta: payload.meta,
     siteUrl,
     timeline,
+    snapshots,
     requestCount: Object.keys(requests).length,
     orphanRequests: collectOrphanRequests(payload, timeline),
     describeBlock,

@@ -693,6 +693,14 @@ async function stopAndExport() {
 
   const allRequests = [...completedRequests.values()];
 
+  // Build snapshots map: context_id → a11y tree text (for action blocks only)
+  const snapshotsData = {};
+  for (const block of timeline) {
+    if (block.action && block.post_action_a11y_tree_summary) {
+      snapshotsData[block.context_id] = block.post_action_a11y_tree_summary;
+    }
+  }
+
   // Level 1: index.json (skeleton only)
   const indexData = timeline.map((block) => {
     const entry = { context_id: block.context_id, timestamp: block.timestamp };
@@ -705,9 +713,9 @@ async function stopAndExport() {
     if (block.triggered_network) {
       entry.triggered_network = block.triggered_network;
     }
-    if (block.post_action_a11y_tree_summary !== undefined) {
-      entry.post_action_a11y_tree_summary = block.post_action_a11y_tree_summary;
-      entry.post_action_a11y_tree_summary_length = block.post_action_a11y_tree_summary_length ?? null;
+    // Reference snapshot by id instead of inlining the full a11y text
+    if (block.action && block.post_action_a11y_tree_summary) {
+      entry.snapshot_id = block.context_id;
     }
     return entry;
   });
@@ -795,6 +803,7 @@ async function stopAndExport() {
         },
         content: {
           'index.json': indexData,
+          snapshots: snapshotsData,
           requests: requestsData,
           responses: responsesData,
         },
@@ -822,7 +831,22 @@ async function stopAndExport() {
     } else {
       // Download: build ZIP and trigger download
       const zip = new JSZip();
+
+      const now = new Date();
+      zip.file('meta.json', JSON.stringify({
+        timestamp: now.toISOString(),
+        epoch: now.getTime(),
+        version: chrome.runtime.getManifest().version,
+        source: 'WebTape',
+        hostname: siteHostname || undefined,
+      }, null, 2));
+
       zip.file('index.json', JSON.stringify(indexData, null, 2));
+
+      const snapshotFolder = zip.folder('snapshots');
+      for (const [contextId, snapshotText] of Object.entries(snapshotsData)) {
+        snapshotFolder.file(`snapshot_${contextId}.md`, snapshotText);
+      }
 
       const reqFolder = zip.folder('requests');
       const resFolder = zip.folder('responses');
@@ -842,7 +866,6 @@ async function stopAndExport() {
 
       const domain = siteHostname || 'unknown';
 
-      const now = new Date();
       const pad = (n, len = 2) => String(n).padStart(len, '0');
       const datePart = `${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
       const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;

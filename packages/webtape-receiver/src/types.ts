@@ -11,6 +11,8 @@ export interface WebTapePayload {
   };
   content: {
     'index.json': ContextBlock[];
+    /** context_id → a11y tree text for each post-action snapshot */
+    snapshots?: Record<string, string>;
     requests: Record<string, RequestEntry>;
     responses: Record<string, ResponseEntry>;
   };
@@ -34,8 +36,8 @@ export interface ContextBlock {
     aria_label: string;
   };
   triggered_network?: NetworkSummary[] | null;
-  post_action_a11y_tree_summary?: string | null;
-  post_action_a11y_tree_summary_length?: number | null;
+  /** ID pointing to the post-action a11y snapshot file: snapshots/snapshot_${snapshot_id}.md */
+  snapshot_id?: string | null;
 }
 
 export interface NetworkSummary {

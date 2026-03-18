@@ -105,9 +105,11 @@ export function saveRecording(
   const sessionDir = join(workspace.recordings, dirName);
   const reqDir = join(sessionDir, 'requests');
   const resDir = join(sessionDir, 'responses');
+  const snapshotDir = join(sessionDir, 'snapshots');
 
   mkdirSync(reqDir, { recursive: true });
   mkdirSync(resDir, { recursive: true });
+  mkdirSync(snapshotDir, { recursive: true });
 
   // Create a mapping of original req_id to sequential ID (0001, 0002, ...)
   const allReqIds = Object.keys(payload.content.requests)
@@ -124,13 +126,20 @@ export function saveRecording(
     idMap.set(oldId, String(index + 1).padStart(4, '0'));
   });
 
-  // Update index.json with new req_ids
+  // Update index.json: remap req_ids and keep detail_path in sync
   const updatedIndex = payload.content['index.json'].map(block => ({
     ...block,
-    triggered_network: block.triggered_network?.map(net => ({
-      ...net,
-      req_id: idMap.get(net.req_id) || net.req_id
-    }))
+    triggered_network: block.triggered_network?.map(net => {
+      const newId = idMap.get(net.req_id) || net.req_id;
+      return {
+        ...net,
+        req_id: newId,
+        detail_path: {
+          request: `requests/req_${newId}_body.json`,
+          response: `responses/req_${newId}_res.json`,
+        },
+      };
+    }),
   }));
 
   writeFileSync(
@@ -164,6 +173,16 @@ export function saveRecording(
       JSON.stringify(withParsedJsonBody(data), null, 2),
       'utf-8',
     );
+  }
+
+  if (payload.content.snapshots) {
+    for (const [contextId, snapshotText] of Object.entries(payload.content.snapshots)) {
+      writeFileSync(
+        join(snapshotDir, `snapshot_${contextId}.md`),
+        snapshotText,
+        'utf-8',
+      );
+    }
   }
 
   writeFileSync(
