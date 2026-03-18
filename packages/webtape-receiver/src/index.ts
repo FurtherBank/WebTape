@@ -7,8 +7,8 @@ import ora from 'ora';
 import { resolveWorkspaceRoot, ensureWorkspace } from './workspace.js';
 import { createWebhookServer } from './server.js';
 import { listRecordings, listUnanalyzedRecordings, parseSessionName, formatTime } from './storage.js';
-import { analyzeRecording, VALID_BACKENDS, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
-import { loadConfig, saveConfig, promptAiBackend } from './config.js';
+import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
+import { loadConfig, promptAiBackend, runConfigWizard } from './config.js';
 
 const VERSION = '1.4.3';
 
@@ -58,7 +58,6 @@ program
       backend = config.aiBackend;
     } else {
       backend = await promptAiBackend();
-      saveConfig({ aiBackend: backend });
     }
 
     console.log('');
@@ -272,7 +271,10 @@ program
 
 const configCmd = program
   .command('config')
-  .description('管理 webtape-receiver 配置');
+  .description('交互式配置向导')
+  .action(async () => {
+    await runConfigWizard();
+  });
 
 configCmd
   .command('show')
@@ -283,31 +285,13 @@ configCmd
     console.log(chalk.bold('当前配置:'));
     console.log('');
     if (Object.keys(config).length === 0) {
-      console.log(chalk.gray('  （尚无配置，使用 config set 进行设置）'));
+      console.log(chalk.gray('  （尚无配置，运行 webtape-receiver config 进行设置）'));
     } else {
       if (config.aiBackend) {
         console.log(`  ${chalk.green('AI 后端')}  ${config.aiBackend}`);
       }
     }
     console.log('');
-  });
-
-configCmd
-  .command('set <key> <value>')
-  .description('设置配置项（可用项: aiBackend）')
-  .action((key, value) => {
-    if (key === 'aiBackend') {
-      if (!(VALID_BACKENDS as readonly string[]).includes(value)) {
-        console.error(chalk.red(`  无效值: ${value}，aiBackend 仅支持 ${VALID_BACKENDS.join(' 或 ')}`));
-        process.exit(1);
-      }
-      saveConfig({ aiBackend: value as AnalyzerBackend });
-      console.log(chalk.green(`  ✓ 已设置 aiBackend = ${value}`));
-    } else {
-      console.error(chalk.red(`  未知配置项: ${key}`));
-      console.log(chalk.gray('  可用配置项: aiBackend'));
-      process.exit(1);
-    }
   });
 
 program.parse();
