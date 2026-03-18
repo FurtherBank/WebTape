@@ -3,11 +3,12 @@ import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { WorkspacePaths } from "./workspace.js";
 
-export type AnalyzerBackend = "cursor" | "claude";
+export type AnalyzerBackend = "cursor" | "claude" | "none";
 
 export const VALID_BACKENDS: readonly AnalyzerBackend[] = [
   "cursor",
   "claude",
+  "none",
 ] as const;
 
 /**

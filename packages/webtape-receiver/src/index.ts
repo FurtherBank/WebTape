@@ -41,8 +41,7 @@ program
   .description('启动 webhook 接收服务器')
   .option('-p, --port <number>', '监听端口', '5643')
   .option('-w, --workspace <path>', '工作区路径（默认 ~/Desktop/WebTape）')
-  .option('--no-auto-analyze', '接收数据后不自动运行 AI 分析')
-  .option('--backend <name>', 'AI 分析后端（cursor / claude）', '')
+  .option('--backend <name>', 'AI 分析后端（cursor / claude / none），覆盖配置文件', '')
   .option('--model <name>', 'AI 模型名称（例如 kimi-k2.5）')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
@@ -60,15 +59,22 @@ program
       backend = await promptAiBackend();
     }
 
+    // 'none' means the user explicitly disabled auto-analysis via config
+    const autoAnalyze = backend !== 'none';
+
     console.log('');
     console.log(chalk.bold.cyan('  🎬 WebTape Receiver') + chalk.gray(` v${VERSION}`));
     console.log(chalk.gray('  ─────────────────────────────────'));
     console.log(`  ${chalk.green('工作区')}  ${workspace.root}`);
     console.log(`  ${chalk.green('端口')}    ${port}`);
-    console.log(`  ${chalk.green('自动分析')} ${opts.autoAnalyze ? chalk.yellow('开启') : chalk.gray('关闭')}`);
-    console.log(`  ${chalk.green('AI 后端')} ${backend}`);
-    if (opts.model) {
-      console.log(`  ${chalk.green('AI 模型')} ${opts.model}`);
+    if (autoAnalyze) {
+      console.log(`  ${chalk.green('自动分析')} ${chalk.yellow('开启')}`);
+      console.log(`  ${chalk.green('AI 后端')} ${backend}`);
+      if (opts.model) {
+        console.log(`  ${chalk.green('AI 模型')} ${opts.model}`);
+      }
+    } else {
+      console.log(`  ${chalk.green('自动分析')} ${chalk.gray('关闭')}`);
     }
     console.log('');
 
@@ -77,7 +83,7 @@ program
     const srv = createWebhookServer({
       port,
       workspace,
-      autoAnalyze: opts.autoAnalyze,
+      autoAnalyze,
       analyzerBackend: backend,
       analyzerModel: opts.model,
       onReceive(sessionDir, payload) {
@@ -88,18 +94,18 @@ program
         console.log(`    ${chalk.gray('会话')}    ${sessionDir}`);
         console.log(`    ${chalk.gray('操作数')}  ${actions}`);
         console.log(`    ${chalk.gray('请求数')}  ${requests}`);
-        if (opts.autoAnalyze) {
+        if (autoAnalyze) {
           console.log('');
           console.log(chalk.cyan('  ⏳ 正在启动 AI 分析…') + chalk.gray(' (预估 1-2min，请稍候)'));
         }
       },
       onAnalyzeLog(line) {
-        if (opts.autoAnalyze) {
+        if (autoAnalyze) {
           process.stdout.write(chalk.gray(`    ${line.length > 80 ? line.slice(0, 77) + '...' : line}\r`));
         }
       },
       onAnalyzeDone(result) {
-        if (opts.autoAnalyze) {
+        if (autoAnalyze) {
           process.stdout.write(' '.repeat(process.stdout.columns || 80) + '\r');
         }
         console.log('');
@@ -181,9 +187,13 @@ program
     const config = loadConfig();
     if (opts.backend) {
       backend = opts.backend as AnalyzerBackend;
-    } else if (config.aiBackend) {
+    } else if (config.aiBackend && config.aiBackend !== 'none') {
       backend = config.aiBackend;
     } else {
+      if (config.aiBackend === 'none') {
+        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape-receiver config 选择 AI 后端。'));
+        process.exit(1);
+      }
       backend = 'cursor';
     }
 
@@ -231,9 +241,13 @@ program
     const config = loadConfig();
     if (opts.backend) {
       backend = opts.backend as AnalyzerBackend;
-    } else if (config.aiBackend) {
+    } else if (config.aiBackend && config.aiBackend !== 'none') {
       backend = config.aiBackend;
     } else {
+      if (config.aiBackend === 'none') {
+        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape-receiver config 选择 AI 后端。'));
+        process.exit(1);
+      }
       backend = 'cursor';
     }
 

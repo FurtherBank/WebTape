@@ -148,6 +148,7 @@ const CONFIG_STEPS = [
     options: [
       { label: 'cursor', value: 'cursor' as AnalyzerBackend, hint: 'Cursor Agent  (cursor agent …)' },
       { label: 'claude', value: 'claude' as AnalyzerBackend, hint: 'Claude Code   (claude … --dangerously-skip-permissions)' },
+      { label: '不分析', value: 'none'  as AnalyzerBackend, hint: '仅接收并保存录制数据，不自动运行 AI 分析' },
     ],
   },
 ] satisfies ConfigStep<keyof WebtapeConfig>[];
