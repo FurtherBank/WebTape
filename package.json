@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "postinstall": "cp node_modules/jszip/dist/jszip.min.js lib/jszip.min.js",
-    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css lib/ icons/"
+    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css lib/ icons/",
+    "start": "npm start --prefix packages/webtape-receiver"
   },
   "repository": {
     "type": "git",
