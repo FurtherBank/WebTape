@@ -10,7 +10,7 @@ import { listRecordings, listUnanalyzedRecordings, parseSessionName, formatTime 
 import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
 import { loadConfig, promptAiBackend, runConfigWizard } from './config.js';
 
-const VERSION = '1.4.3';
+const VERSION = '1.5.0';
 
 const program = new Command();
 
