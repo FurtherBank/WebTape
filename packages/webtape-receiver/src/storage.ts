@@ -1,8 +1,27 @@
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
-import type { WebTapePayload } from './types.js';
+import type { WebTapePayload, SavedIndexFile, SavedContextBlock } from './types.js';
 import { extractSiteUrl, renderAnalysisContext } from './context.js';
+
+/**
+ * Format a unix-ms timestamp as a local-timezone ISO string with milliseconds.
+ * e.g. 1742460645123 → "2026-03-20T14:30:45.123+08:00"
+ */
+function formatLocalTimestamp(ts: number): string {
+  const d = new Date(ts);
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(offsetMin);
+  const tzHH = String(Math.floor(absMin / 60)).padStart(2, '0');
+  const tzMM = String(absMin % 60).padStart(2, '0');
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `.${pad(d.getMilliseconds(), 3)}${sign}${tzHH}:${tzMM}`
+  );
+}
 
 /**
  * Extract the full hostname from a URL string.
@@ -22,10 +41,11 @@ export function extractHostname(url: string): string {
  * e.g. "www.github.com/0305-123000"
  */
 function sessionDirName(payload: WebTapePayload): string {
-  const d = new Date(payload.meta.epoch);
+  const firstTs = payload.content['index.json'][0]?.timestamp ?? Date.now();
+  const d = new Date(firstTs);
   const pad = (n: number, len = 2) => String(n).padStart(len, '0');
 
-  const hostname = payload.meta.hostname || extractHostname(extractSiteUrl(payload)) || 'unknown';
+  const hostname = extractHostname(extractSiteUrl(payload)) || 'unknown';
   const datePart = `${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
   const timePart = `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 
@@ -142,9 +162,17 @@ export function saveRecording(
     }),
   }));
 
+  const savedTimeline: SavedContextBlock[] = updatedIndex.map((block) => ({
+    ...block,
+    timestamp: formatLocalTimestamp(block.timestamp),
+  }));
+  const savedIndex: SavedIndexFile = {
+    meta: { version: payload.meta.version },
+    timeline: savedTimeline,
+  };
   writeFileSync(
     join(sessionDir, 'index.json'),
-    JSON.stringify(updatedIndex, null, 2),
+    JSON.stringify(savedIndex, null, 2),
     'utf-8',
   );
 
@@ -184,12 +212,6 @@ export function saveRecording(
       );
     }
   }
-
-  writeFileSync(
-    join(sessionDir, 'meta.json'),
-    JSON.stringify(payload.meta, null, 2),
-    'utf-8',
-  );
 
   const siteUrl = extractSiteUrl(payload);
   writeFileSync(

@@ -18,6 +18,26 @@ export interface WebTapePayload {
   };
 }
 
+/**
+ * ContextBlock as written to disk: timestamp is converted from unix ms to a
+ * local-timezone ISO string (e.g. "2026-03-20T14:30:45.123+08:00").
+ */
+export type SavedContextBlock = Omit<ContextBlock, 'timestamp'> & {
+  timestamp: string;
+};
+
+/**
+ * Shape of the index.json file written to disk for each recording session.
+ * meta.json is not written separately; only version (unique to meta) is kept here.
+ * All other meta fields (epoch, timestamp, source, hostname) are derivable from timeline.
+ */
+export interface SavedIndexFile {
+  meta: {
+    version: string;
+  };
+  timeline: SavedContextBlock[];
+}
+
 export interface ContextBlock {
   context_id: string;
   timestamp: number;
