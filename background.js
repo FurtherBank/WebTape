@@ -58,6 +58,12 @@ const RECORDING_GRACE_MS = 800;     // ignore user actions within this window af
 /** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
 let recordingStartTime = 0;
 
+/** @type {string} Current page URL, tracked to detect SPA navigation changes */
+let currentNavigationUrl = '';
+
+/** @type {boolean} Set to true once the INITIAL_LOAD block has been created */
+let initialLoadComplete = false;
+
 // Resource types from CDP that represent API / data requests we want to capture.
 const ALLOWED_RESOURCE_TYPES = new Set([
   'XHR', 'Fetch', 'WebSocket', 'EventSource', 'Other',
@@ -124,6 +130,8 @@ function resetSession() {
   contextCounter = 0;
   requestCounter = 0;
   networkIdleTimer = null;
+  currentNavigationUrl = '';
+  initialLoadComplete = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +525,65 @@ async function finaliseAction(pendingAction, block) {
   block.triggered_network = pendingAction.collectedRequests.map(toNetworkSummary);
 }
 
+/**
+ * Handle a Page.frameNavigated CDP event to detect SPA URL changes.
+ * Creates a new URL_CHANGE context block and opens a sliding window to
+ * associate subsequent network requests with the navigation.
+ */
+function handleFrameNavigated(params) {
+  if (!initialLoadComplete) return; // ignore navigations before recording is ready
+  if (recorderState !== 'recording') return;
+
+  const { frame } = params;
+  if (frame.parentId) return; // sub-frame — only track main frame
+
+  const newUrl = frame.url;
+  if (!newUrl || newUrl === currentNavigationUrl) return; // no real change
+
+  currentNavigationUrl = newUrl;
+  console.log('[WebTape] URL_CHANGE detected:', newUrl);
+
+  const contextId = nextContextId();
+  const now = performance.now();
+
+  const pendingNav = {
+    action: null,
+    openUntil: now + ACTION_WINDOW_MS,
+    collectedRequests: [],
+    contextId,
+  };
+
+  // Back-scan requests that arrived just before the navigation (same window)
+  const windowStartMs = Date.now() - ACTION_WINDOW_MS;
+  for (const entry of completedRequests.values()) {
+    if (entry.startTime * 1000 >= windowStartMs) {
+      pendingNav.collectedRequests.push(entry);
+    }
+  }
+
+  pendingActions.push(pendingNav);
+
+  /** @type {ContextBlock} */
+  const block = {
+    context_id: contextId,
+    timestamp: Date.now(),
+    state: {
+      type: 'URL_CHANGE',
+      url: newUrl,
+      title: '',
+    },
+    triggered_network: null,
+  };
+  timeline.push(block);
+
+  // Fetch the actual page title asynchronously (tab title updates after navigation)
+  chrome.tabs.get(activeTabId).then((tab) => {
+    if (tab && tab.title) block.state.title = tab.title;
+  }).catch(() => {});
+
+  setTimeout(() => finaliseAction(pendingNav, block), ACTION_WINDOW_MS + 100);
+}
+
 function toNetworkSummary(entry) {
   const summary = {
     req_id: entry.reqId,
@@ -606,6 +673,9 @@ async function startRecording(tabId, refreshFirst) {
   // Enable Accessibility domain
   await cdpSend('Accessibility.enable', {});
 
+  // Always enable Page domain — needed for loadEventFired and frameNavigated (SPA nav)
+  await cdpSend('Page.enable', {});
+
   if (refreshFirst) {
     // Wait for page load event before taking initial A11y snapshot
     await new Promise((resolve) => {
@@ -616,10 +686,7 @@ async function startRecording(tabId, refreshFirst) {
         }
       };
       chrome.debugger.onEvent.addListener(handler);
-      // Enable Page domain to receive loadEventFired
-      cdpSend('Page.enable', {}).then(() => {
-        chrome.tabs.reload(tabId);
-      });
+      chrome.tabs.reload(tabId);
     });
   }
 
@@ -627,7 +694,8 @@ async function startRecording(tabId, refreshFirst) {
   console.log('[WebTape] Capturing initial page info and A11y snapshot…');
   const tab = await chrome.tabs.get(tabId);
   const initialA11y = await captureA11ySummary();
-  timeline.push({
+  /** @type {ContextBlock} */
+  const initialBlock = {
     context_id: nextContextId(),
     timestamp: Date.now(),
     state: {
@@ -637,8 +705,32 @@ async function startRecording(tabId, refreshFirst) {
       fav_icon_url: tab.favIconUrl || '',
       a11y_tree_summary: initialA11y,
     },
-  });
+    triggered_network: null,
+  };
+  timeline.push(initialBlock);
   recordingStartTime = Date.now();
+
+  // Track current URL for SPA navigation detection
+  currentNavigationUrl = tab.url || '';
+  initialLoadComplete = true;
+
+  // Open a sliding window to associate network requests that fired during page
+  // load (back-scan already-completed + forward-collect for ACTION_WINDOW_MS).
+  const initialPending = {
+    action: null,
+    openUntil: performance.now() + ACTION_WINDOW_MS,
+    collectedRequests: [],
+    contextId: initialBlock.context_id,
+  };
+  const initWindowStartMs = Date.now() - ACTION_WINDOW_MS;
+  for (const entry of completedRequests.values()) {
+    if (entry.startTime * 1000 >= initWindowStartMs) {
+      initialPending.collectedRequests.push(entry);
+    }
+  }
+  pendingActions.push(initialPending);
+  setTimeout(() => finaliseAction(initialPending, initialBlock), ACTION_WINDOW_MS + 100);
+
   console.log('[WebTape] Recording started successfully.');
 }
 
@@ -937,6 +1029,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
       break;
     case 'Network.webSocketClosed':
       handleWebSocketClosed(params);
+      break;
+
+    // Page navigation events (SPA route changes)
+    case 'Page.frameNavigated':
+      handleFrameNavigated(params);
       break;
 
     default:

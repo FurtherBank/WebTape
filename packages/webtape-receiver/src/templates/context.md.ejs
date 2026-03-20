@@ -21,8 +21,15 @@
 ### [<%- i + 1 %>] <%- describeBlock(block) %>
 
 <% if (block.state) { -%>
+<% if (block.state.type === 'URL_CHANGE') { -%>
+- 变更前 → 当前 URL: <%- block.state.url %>
+<% if (block.state.title) { -%>
+- 页面标题: <%- block.state.title %>
+<% } -%>
+<% } else { -%>
 - URL: <%- block.state.url %>
 - 标题: <%- block.state.title %>
+<% } -%>
 
 <% } -%>
 <% if (block.action) { -%>

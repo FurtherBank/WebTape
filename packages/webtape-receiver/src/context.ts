@@ -162,7 +162,11 @@ function renderRequestBody(body: unknown, headers: Record<string, string> | null
 
 function describeBlock(block: ContextBlock): string {
   if (block.state) {
-    return `页面状态: ${block.state.title || block.state.url}`;
+    const label = block.state.title || block.state.url;
+    if (block.state.type === 'URL_CHANGE') {
+      return `URL 变更: ${label}`;
+    }
+    return `初始页面: ${label}`;
   }
   if (block.action) {
     const tag = block.action.tag || '';
