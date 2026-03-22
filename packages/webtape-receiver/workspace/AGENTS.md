@@ -63,7 +63,81 @@ export async function getZhiHuCollection({ userId }) {
 }
 ```
 
-### 第三步：以 request.js 为抓手，梳理完整业务流程报告
+### 第三步：编写 index.js，驱动完整业务流程执行
+
+以 `request.js` 中的函数为调用单元，结合录制数据中的真实入参，编写 `index.js` 将完整业务流程跑通。
+
+**核心要求**：
+
+- **入参使用录制数据的真实值**：从 `_context.md` / 请求原始文件中提取录制时的实际参数值作为调用入参（如 userId、pageId 等）
+- **详细 console 日志**：每个关键节点都需打印结构化日志，包括：
+  - 入参数据（字段名 + 实际值）
+  - 各步骤流转数据（字段名 + 实际值，尤其是用于下一步请求的字段）
+  - 流程分支执行情况（若业务逻辑存在条件分支，需说明走了哪条分支及原因）
+  - 流程最终结果输出（关键响应字段 + 值）
+- **非 GET 请求须用户确认**：对于会产生实际副作用的非 GET 请求（POST/PUT/PATCH/DELETE 等写操作），在发送前必须调用内联的 `confirmAction` 工具函数，要求用户按回车确认后再发送；用户拒绝则跳过该步骤并打印提示
+- **依赖管理**：若脚本需要额外 npm 依赖才能运行（如 `readline`、`chalk` 等），在文件顶部注释中列出安装命令（`// npm install xxx`），以便用户在运行前安装
+
+**代码规范**（以知乎收藏夹为例）：
+
+```javascript
+// 如需额外依赖，在此注明安装命令，例如：
+// npm install chalk
+
+import readline from "readline";
+import { getZhiHuCollection } from "./request.js";
+
+// 用于非 GET 请求的用户确认工具
+async function confirmAction(description) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`\n⚠️  即将执行【${description}】，按回车确认，输入 n 跳过: `, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() !== "n");
+    });
+  });
+}
+
+async function main() {
+  // ── 入参说明 ──────────────────────────────────────────────
+  const params = {
+    userId: "zhang-wei-42",  // 录制数据中的真实值
+  };
+  console.log("📥 入参数据:", params);
+
+  // ── 步骤 1: 获取收藏夹列表 ──────────────────────────────
+  console.log("\n▶ 步骤 1: 获取收藏夹列表");
+  const collectionsRes = await getZhiHuCollection(params);
+  const { data: collections, paging } = collectionsRes;
+  console.log("  流转数据 — 收藏夹总数:", paging.totals);
+  console.log("  流转数据 — 首条收藏夹 id:", collections[0]?.id, "title:", collections[0]?.title);
+
+  // ── 流程分支（示例：若收藏夹为空则提前退出）────────────
+  if (!collections.length) {
+    console.log("⚠️  分支: 收藏夹为空，流程提前结束");
+    return;
+  }
+  console.log("✅ 分支: 收藏夹非空，继续执行");
+
+  // ── 步骤 2 (POST 示例，需用户确认) ──────────────────────
+  // const ok = await confirmAction("创建新收藏夹");
+  // if (ok) {
+  //   const createRes = await createCollection({ title: "新收藏夹" });
+  //   console.log("  流转数据 — 新建收藏夹 id:", createRes.id);
+  // } else {
+  //   console.log("⏭  已跳过创建收藏夹");
+  // }
+
+  // ── 最终结果输出 ─────────────────────────────────────────
+  console.log("\n🏁 流程执行完成");
+  console.log("  最终结果 — 收藏夹数量:", collections.length);
+  console.log("  最终结果 — 首个收藏夹:", { id: collections[0]?.id, title: collections[0]?.title });
+}
+
+main().catch(console.error);
+```
+
+### 第四步：以 request.js 为抓手，梳理完整业务流程报告
 
 以 `request.js` 的函数结构为骨架，展开以下分析，生成 `analysis_report.md`：
 
@@ -87,4 +161,5 @@ export async function getZhiHuCollection({ userId }) {
 ## 输出要求
 
 1. **分析报告**：Markdown 格式，保存到 `recordings/<记录名>/analysis_report.md`。
-2. **业务逻辑代码**：JavaScript 格式，保存到 `recordings/<记录名>/request.js`。
+2. **业务流程函数**：JavaScript 格式，保存到 `recordings/<记录名>/request.js`。
+3. **流程执行入口**：JavaScript 格式，保存到 `recordings/<记录名>/index.js`。
