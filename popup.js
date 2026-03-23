@@ -3,6 +3,7 @@
 const btnDirectRecord = document.getElementById('btnDirectRecord');
 const btnRefreshRecord = document.getElementById('btnRefreshRecord');
 const btnStop = document.getElementById('btnStop');
+const btnSnapshot = document.getElementById('btnSnapshot');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const statActions = document.getElementById('statActions');
@@ -157,6 +158,50 @@ chrome.runtime.sendMessage({ type: 'GET_STATE' }, (resp) => {
     statRequests.textContent = resp.stats.requests || 0;
     statContexts.textContent = resp.stats.contexts || 0;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot
+// ---------------------------------------------------------------------------
+
+btnSnapshot.addEventListener('click', async () => {
+  setMessage('');
+  const tab = await getCurrentTab();
+  if (!tab) {
+    setMessage('No active tab found.', 'error');
+    return;
+  }
+
+  btnSnapshot.disabled = true;
+  const originalLabel = btnSnapshot.innerHTML;
+  btnSnapshot.innerHTML = '<span class="btn-icon">⏳</span> Capturing…';
+
+  chrome.runtime.sendMessage({ type: 'CAPTURE_SNAPSHOT', tabId: tab.id }, async (resp) => {
+    btnSnapshot.disabled = false;
+    btnSnapshot.innerHTML = originalLabel;
+
+    if (chrome.runtime.lastError) {
+      setMessage(chrome.runtime.lastError.message, 'error');
+      return;
+    }
+    if (resp && resp.error) {
+      setMessage(resp.error, 'error');
+      return;
+    }
+
+    const snapshot = (resp && resp.snapshot) || '';
+    if (!snapshot) {
+      setMessage('Snapshot is empty.', 'error');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(snapshot);
+      setMessage('Snapshot copied to clipboard!', 'success');
+    } catch (_e) {
+      setMessage('Failed to write to clipboard.', 'error');
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

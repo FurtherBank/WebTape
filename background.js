@@ -139,14 +139,15 @@ function resetSession() {
 // ---------------------------------------------------------------------------
 
 /**
- * Send a CDP command to the attached tab.
+ * Send a CDP command to the given tab (defaults to the active recording tab).
  * @param {string} method
  * @param {Object} [params]
+ * @param {number} [tabId]
  * @returns {Promise<any>}
  */
-function cdpSend(method, params = {}) {
+function cdpSend(method, params = {}, tabId = activeTabId) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId: activeTabId }, method, params, (result) => {
+    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {
@@ -203,6 +204,40 @@ function summariseA11yNodes(nodes) {
   }
 
   return lines.join(' \n ');
+}
+
+/**
+ * Capture an A11y snapshot for any tab, attaching the debugger temporarily
+ * if the recorder is not currently active on that tab.
+ * @param {number} tabId
+ * @returns {Promise<string>}
+ */
+async function captureSnapshotForTab(tabId) {
+  // Reuse the existing CDP session when recording on this tab
+  if (recorderState === 'recording' && activeTabId === tabId) {
+    return captureA11ySummary();
+  }
+
+  // Temporarily attach the debugger
+  await new Promise((resolve, reject) => {
+    chrome.debugger.attach({ tabId }, '1.3', () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+
+  try {
+    await cdpSend('Accessibility.enable', {}, tabId);
+    const result = await cdpSend('Accessibility.getFullAXTree', {}, tabId);
+    return result && result.nodes ? summariseA11yNodes(result.nodes) : '';
+  } finally {
+    await new Promise((resolve) => {
+      chrome.debugger.detach({ tabId }, () => resolve());
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,6 +1136,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (type === 'STOP_EXPORT') {
     stopAndExport()
       .then((result) => sendResponse({ ok: true, exportMode: result.exportMode }))
+      .catch((e) => sendResponse({ error: e.message }));
+    return true; // async
+  }
+
+  if (type === 'CAPTURE_SNAPSHOT') {
+    captureSnapshotForTab(message.tabId)
+      .then((snapshot) => sendResponse({ ok: true, snapshot }))
       .catch((e) => sendResponse({ error: e.message }));
     return true; // async
   }

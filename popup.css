@@ -148,6 +148,21 @@ body {
   background: #b91c1c;
 }
 
+.btn-ghost {
+  background: transparent;
+  color: #22d3ee;
+  border: 1px solid #22d3ee44;
+}
+
+.btn-ghost:not(:disabled):hover {
+  background: #22d3ee18;
+  border-color: #22d3ee88;
+}
+
+.snapshot-bar {
+  margin-bottom: 10px;
+}
+
 .stats {
   display: flex;
   justify-content: space-between;
