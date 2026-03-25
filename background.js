@@ -1,5 +1,6 @@
 'use strict';
 
+importScripts('rules.js');
 importScripts('lib/jszip.min.js');
 
 // ---------------------------------------------------------------------------
@@ -50,10 +51,8 @@ let requestCounter = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let networkIdleTimer = null;
 
-// Constants
-const NETWORK_IDLE_DELAY_MS = 1500; // ms of network silence before capturing post-action A11y
-const ACTION_WINDOW_MS = 2000;      // ms sliding window to associate requests with an action
-const RECORDING_GRACE_MS = 800;     // ignore user actions within this window after recording starts
+// Timing constants — sourced from rules.js (WebTapeRules)
+const { NETWORK_IDLE_DELAY_MS, ACTION_WINDOW_MS, RECORDING_GRACE_MS } = WebTapeRules;
 
 /** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
 let recordingStartTime = 0;
@@ -64,50 +63,8 @@ let currentNavigationUrl = '';
 /** @type {boolean} Set to true once the INITIAL_LOAD block has been created */
 let initialLoadComplete = false;
 
-// Resource types from CDP that represent API / data requests we want to capture.
-const ALLOWED_RESOURCE_TYPES = new Set([
-  'XHR', 'Fetch', 'WebSocket', 'EventSource', 'Other',
-]);
-
-// MIME type prefixes / substrings that indicate API / data responses.
-const ALLOWED_MIME_PATTERNS = [
-  'application/json',
-  'text/json',
-  'text/plain',
-  'text/html',
-  'text/xml',
-  'application/xml',
-  'application/x-www-form-urlencoded',
-  'multipart/form-data',
-  'application/graphql',
-  'application/grpc',
-  'application/x-ndjson',
-  'text/event-stream',
-];
-
-// URL path extensions that are definitely static resources — used as a fallback
-// when CDP does not provide a resource type.
-const STATIC_EXT_RE = /\.(?:css|js|mjs|jsx|ts|tsx|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|otf|mp4|webm|ogg|mp3|wav|map)(?:[?#]|$)/i;
-
-/**
- * Determine whether a request should be captured based on its CDP resource
- * type and URL.  Returns `true` for API / data requests only.
- */
-function shouldCaptureByType(resourceType, url) {
-  if (resourceType) {
-    return ALLOWED_RESOURCE_TYPES.has(resourceType);
-  }
-  return !STATIC_EXT_RE.test(url);
-}
-
-/**
- * Check whether a MIME type looks like an API / data response.
- */
-function isApiMimeType(mime) {
-  if (!mime) return true; // unknown → keep to be safe
-  const lower = mime.toLowerCase();
-  return ALLOWED_MIME_PATTERNS.some((p) => lower.startsWith(p));
-}
+// Request capture functions — sourced from rules.js (WebTapeRules)
+const { shouldCaptureByType, isApiMimeType } = WebTapeRules;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -184,14 +141,10 @@ async function captureA11ySummary() {
  */
 function summariseA11yNodes(nodes) {
   const lines = [];
-  const IGNORED_ROLES = new Set([
-    'none', 'presentation', 'generic', 'InlineTextBox', 'LineBreak',
-    'ScrollArea', 'unknown',
-  ]);
 
   for (const node of nodes) {
     const role = node.role && node.role.value;
-    if (!role || IGNORED_ROLES.has(role)) continue;
+    if (!role || WebTapeRules.A11Y_IGNORED_ROLES.has(role)) continue;
 
     const name = node.name && node.name.value ? node.name.value.trim() : '';
     const description = node.description && node.description.value

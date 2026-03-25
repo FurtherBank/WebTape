@@ -73,12 +73,7 @@
   }, true);
 
   document.addEventListener('keydown', (e) => {
-    // Only capture significant keys to reduce noise
-    const SIGNIFICANT_KEYS = new Set([
-      'Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-      'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown',
-    ]);
-    if (SIGNIFICANT_KEYS.has(e.key)) {
+    if (WebTapeRules.SIGNIFICANT_KEYS.has(e.key)) {
       sendAction('KEYDOWN', e.target, { key: e.key });
     }
   }, true);
