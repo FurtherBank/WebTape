@@ -9,6 +9,15 @@ import type {
   RequestEntry,
   ResponseEntry,
 } from './types.js';
+import {
+  isNoiseHeader,
+  SENSITIVE_HEADER_RULES,
+  HEADER_VALUE_MAX_LENGTH,
+  BODY_FULL_LIMIT,
+  BODY_PREVIEW_LIMIT,
+  isAllowedProtocol,
+  STRIP_FIRST_CLICK,
+} from './rules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, 'templates', 'context.md.ejs');
@@ -22,46 +31,20 @@ function loadTemplate(): string {
   return cachedTemplate;
 }
 
-// ---------------------------------------------------------------------------
-// Header / body formatting
-// ---------------------------------------------------------------------------
-
-const NOISE_HEADERS = new Set([
-  'accept-encoding', 'accept-language', 'cache-control', 'connection',
-  'content-length', 'dnt', 'etag', 'if-modified-since', 'if-none-match',
-  'keep-alive', 'pragma', 'server', 'vary', 'date', 'age', 'expires',
-  'last-modified', 'transfer-encoding', 'x-powered-by', 'x-request-id',
-  'x-frame-options', 'x-content-type-options', 'x-xss-protection',
-]);
-
-const NOISE_HEADER_PREFIXES = [
-  'sec-', 'content-security-policy', 'strict-transport-security',
-  'access-control-', 'permissions-policy', 'cross-origin-',
-  'report-to', 'nel', ':',
-];
-
-const BODY_FULL_LIMIT = 2000;
-const BODY_PREVIEW_LIMIT = 500;
-
-function isNoiseHeader(name: string): boolean {
-  const lower = name.toLowerCase();
-  if (NOISE_HEADERS.has(lower)) return true;
-  return NOISE_HEADER_PREFIXES.some((p) => lower.startsWith(p));
-}
-
 function renderHeaders(headers: Record<string, string> | null | undefined): string | null {
   if (!headers) return null;
   const lines: string[] = [];
   for (const [key, value] of Object.entries(headers)) {
     if (isNoiseHeader(key)) continue;
     const lower = key.toLowerCase();
-    if (lower === 'cookie') {
+    const sensitiveRule = SENSITIVE_HEADER_RULES[lower];
+    if (sensitiveRule === 'cookie_names') {
       const names = value.split(';').map((p) => p.trim().split('=')[0]).filter(Boolean);
       lines.push(`${key}: [${names.length} cookies: ${names.join(', ')}]`);
-    } else if (lower === 'set-cookie') {
-      lines.push(`${key}: [set-cookie present]`);
+    } else if (sensitiveRule === 'presence_only') {
+      lines.push(`${key}: [${lower} present]`);
     } else {
-      lines.push(`${key}: ${value.length > 300 ? value.slice(0, 300) + '…' : value}`);
+      lines.push(`${key}: ${value.length > HEADER_VALUE_MAX_LENGTH ? value.slice(0, HEADER_VALUE_MAX_LENGTH) + '…' : value}`);
     }
   }
   return lines.length > 0 ? lines.join('\n') : null;
@@ -176,34 +159,22 @@ function describeBlock(block: ContextBlock): string {
   return `上下文 ${block.context_id}`;
 }
 
-function isAllowedProtocol(url: string): boolean {
-  try {
-    const protocol = new URL(url).protocol.toLowerCase();
-    return protocol !== 'http:' && protocol !== 'ws:';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Filter and sort timeline blocks.
- * 1. Remove the first block if it's a CLICK action (often a mis-capture during recording start).
+ * 1. (STRIP_FIRST_CLICK) Remove the first block if it's a CLICK action (often a mis-capture during recording start).
  * 2. Ensure blocks are sorted by timestamp.
  * 3. Filter out network requests with disallowed protocols (http, ws).
  */
 function processTimeline(timeline: ContextBlock[]): ContextBlock[] {
   if (timeline.length === 0) return [];
 
-  // Sort by timestamp just in case
   const sorted = [...timeline].sort((a, b) => a.timestamp - b.timestamp);
 
-  // If the first block is a CLICK action, it's likely a mis-capture of the "Start Recording" click
   let result = sorted;
-  if (sorted[0].action?.type === 'CLICK') {
+  if (STRIP_FIRST_CLICK && sorted[0].action?.type === 'CLICK') {
     result = sorted.slice(1);
   }
 
-  // Filter triggered network requests in each block
   return result.map((block) => ({
     ...block,
     triggered_network: block.triggered_network
