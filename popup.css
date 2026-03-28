@@ -8,7 +8,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #1a1a2e;
   color: #e0e0e0;
-  width: 280px;
+  width: 320px;
   min-height: 280px;
 }
 
@@ -279,4 +279,32 @@ body {
 
 .setting-input::placeholder {
   color: #555577;
+}
+
+.setting-row-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.setting-hint {
+  font-size: 10px;
+  color: #7a7a9a;
+  line-height: 1.45;
+}
+
+.setting-hint code {
+  font-size: 9px;
+  word-break: break-all;
+  color: #a8a8c8;
+}
+
+.btn-small {
+  font-size: 11px;
+  padding: 6px 8px;
+  width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.3;
 }

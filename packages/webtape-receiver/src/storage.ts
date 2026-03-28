@@ -5,22 +5,24 @@ import type { WebTapePayload, SavedIndexFile, SavedContextBlock } from './types.
 import { extractSiteUrl, renderAnalysisContext } from './context.js';
 
 /**
- * Format a unix-ms timestamp as a local-timezone ISO string with milliseconds.
- * e.g. 1742460645123 → "2026-03-20T14:30:45.123+08:00"
+ * Format unix-ms as Asia/Shanghai wall time with milliseconds (+08:00).
  */
-function formatLocalTimestamp(ts: number): string {
+function formatTimestampCST(ts: number): string {
   const d = new Date(ts);
-  const offsetMin = -d.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const absMin = Math.abs(offsetMin);
-  const tzHH = String(Math.floor(absMin / 60)).padStart(2, '0');
-  const tzMM = String(absMin % 60).padStart(2, '0');
-  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
-    `.${pad(d.getMilliseconds(), 3)}${sign}${tzHH}:${tzMM}`
-  );
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    fractionalSecondDigits: 3,
+  }).formatToParts(d);
+  const g = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}:${g('second')}+08:00`;
 }
 
 /**
@@ -111,9 +113,9 @@ function withParsedJsonBody<T extends { body?: unknown }>(entry: T): T {
  *   recordings/<session>/
  *     index.json
  *     requests/
- *       req_0001_body.json
+ *       req_0001.json
  *     responses/
- *       req_0001_res.json
+ *       res_0001.json
  *
  * Returns the absolute path of the session directory.
  */
@@ -131,14 +133,14 @@ export function saveRecording(
   mkdirSync(resDir, { recursive: true });
   mkdirSync(snapshotDir, { recursive: true });
 
-  // Create a mapping of original req_id to sequential ID (0001, 0002, ...)
+  // Create a mapping of original req_id → sequential suffix 0001, 0002, …
   const allReqIds = Object.keys(payload.content.requests)
-    .map(filename => filename.replace('_body.json', ''))
+    .map((filename) => filename.replace(/\.json$/, ''))
     .sort((a, b) => {
-      // Extract timestamp from req_id (e.g., req_0001_1773381143117)
-      const tA = parseInt(a.split('_').pop() || '0', 10);
-      const tB = parseInt(b.split('_').pop() || '0', 10);
-      return tA - tB;
+      const nA = parseInt(a.replace(/^req_/, ''), 10);
+      const nB = parseInt(b.replace(/^req_/, ''), 10);
+      if (!Number.isNaN(nA) && !Number.isNaN(nB)) return nA - nB;
+      return a.localeCompare(b);
     });
 
   const idMap = new Map<string, string>();
@@ -146,26 +148,37 @@ export function saveRecording(
     idMap.set(oldId, String(index + 1).padStart(4, '0'));
   });
 
+  function seqFromReqId(oldReqId: string): string {
+    const mapped = idMap.get(oldReqId);
+    if (mapped) return mapped;
+    const m = /^req_(\d+)$/.exec(oldReqId);
+    return m ? m[1] : oldReqId.replace(/^req_/, '');
+  }
+
   // Update index.json: remap req_ids and keep detail_path in sync
-  const updatedIndex = payload.content['index.json'].map(block => ({
+  const updatedIndex = payload.content['index.json'].map((block) => ({
     ...block,
-    triggered_network: block.triggered_network?.map(net => {
-      const newId = idMap.get(net.req_id) || net.req_id;
+    triggered_network: block.triggered_network?.map((net) => {
+      const seq = seqFromReqId(net.req_id);
+      const newReqId = `req_${seq}`;
       return {
         ...net,
-        req_id: newId,
+        req_id: newReqId,
         detail_path: {
-          request: `requests/req_${newId}_body.json`,
-          response: `responses/req_${newId}_res.json`,
+          request: `requests/${newReqId}.json`,
+          response: `responses/res_${seq}.json`,
         },
       };
     }),
   }));
 
-  const savedTimeline: SavedContextBlock[] = updatedIndex.map((block) => ({
-    ...block,
-    timestamp: formatLocalTimestamp(block.timestamp),
-  }));
+  const savedTimeline: SavedContextBlock[] = updatedIndex.map((block) => {
+    const { timestamp, timestamp_cst, ...rest } = block;
+    return {
+      ...rest,
+      timestamp: timestamp_cst ?? formatTimestampCST(timestamp),
+    };
+  });
   const savedIndex: SavedIndexFile = {
     meta: { version: payload.meta.version },
     timeline: savedTimeline,
@@ -177,12 +190,12 @@ export function saveRecording(
   );
 
   for (const [filename, data] of Object.entries(payload.content.requests)) {
-    const oldId = filename.replace('_body.json', '');
-    const newId = idMap.get(oldId) || oldId;
-    const newFilename = `req_${newId}_body.json`;
-    
-    // Add original timestamp/id to data for reference
-    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldId };
+    const oldStem = filename.replace(/\.json$/, '');
+    const seq = idMap.get(oldStem) ?? seqFromReqId(oldStem);
+    const newReqId = `req_${seq}`;
+    const newFilename = `${newReqId}.json`;
+
+    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldStem };
 
     writeFileSync(
       join(reqDir, newFilename),
@@ -192,9 +205,12 @@ export function saveRecording(
   }
 
   for (const [filename, data] of Object.entries(payload.content.responses)) {
-    const oldId = filename.replace('_res.json', '');
-    const newId = idMap.get(oldId) || oldId;
-    const newFilename = `req_${newId}_res.json`;
+    const oldResStem = filename.replace(/\.json$/, '');
+    const oldReqStem = oldResStem.startsWith('res_')
+      ? oldResStem.replace(/^res_/, 'req_')
+      : oldResStem;
+    const seq = idMap.get(oldReqStem) ?? seqFromReqId(oldReqStem);
+    const newFilename = `res_${seq}.json`;
 
     writeFileSync(
       join(resDir, newFilename),

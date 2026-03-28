@@ -76,6 +76,14 @@
           <label class="setting-label" for="webhookUrl">Webhook URL</label>
           <input type="url" id="webhookUrl" class="setting-input" placeholder="http://localhost:5643/webhook">
         </div>
+        <div class="setting-row setting-row-stack">
+          <button type="button" id="btnRegisterScheme" class="btn btn-ghost btn-small">
+            注册 web+webtape 协议（外部链接打开并自动录制）
+          </button>
+          <p class="setting-hint" id="schemeHint">
+            注册后可在浏览器或系统中打开形如 <code>web+webtape://open?url=https://example.com</code> 的链接；首次需完成浏览器协议授权提示。
+          </p>
+        </div>
       </div>
     </div>
 

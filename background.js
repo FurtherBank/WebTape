@@ -1,7 +1,10 @@
 'use strict';
 
 importScripts('rules.js');
+importScripts('time-format.js');
 importScripts('lib/jszip.min.js');
+
+const { formatTimestampCST } = self.WebTapeTime;
 
 // ---------------------------------------------------------------------------
 // State
@@ -37,12 +40,6 @@ const completedRequests = new Map();
  */
 const pendingWebSockets = new Map();
 
-/**
- * Queue of pending user actions waiting for their sliding-window to close.
- * @type {Array<PendingAction>}
- */
-const pendingActions = [];
-
 // Counters for unique IDs
 let contextCounter = 0;
 let requestCounter = 0;
@@ -52,7 +49,7 @@ let requestCounter = 0;
 let networkIdleTimer = null;
 
 // Timing constants — sourced from rules.js (WebTapeRules)
-const { NETWORK_IDLE_DELAY_MS, ACTION_WINDOW_MS, RECORDING_GRACE_MS } = WebTapeRules;
+const { NETWORK_IDLE_DELAY_MS, RECORDING_GRACE_MS } = WebTapeRules;
 
 /** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
 let recordingStartTime = 0;
@@ -75,7 +72,7 @@ function nextContextId() {
 }
 
 function nextRequestId() {
-  return `req_${String(++requestCounter).padStart(4, '0')}_${Date.now()}`;
+  return `req_${String(++requestCounter).padStart(4, '0')}`;
 }
 
 function resetSession() {
@@ -83,7 +80,6 @@ function resetSession() {
   pendingRequests.clear();
   completedRequests.clear();
   pendingWebSockets.clear();
-  pendingActions.length = 0;
   contextCounter = 0;
   requestCounter = 0;
   networkIdleTimer = null;
@@ -275,7 +271,6 @@ async function handleLoadingFinished(params) {
   if (entry.entryType === 'sse') {
     pendingRequests.delete(params.requestId);
     completedRequests.set(params.requestId, entry);
-    associateRequestWithActions(entry);
     scheduleNetworkIdleCheck();
     console.log('[WebTape] SSE stream completed:', entry.url,
       '— events:', entry.sseEvents ? entry.sseEvents.length : 0);
@@ -296,9 +291,6 @@ async function handleLoadingFinished(params) {
 
   pendingRequests.delete(params.requestId);
   completedRequests.set(params.requestId, entry);
-
-  // Associate with open action windows
-  associateRequestWithActions(entry);
 
   // Reset the network-idle timer
   scheduleNetworkIdleCheck();
@@ -390,9 +382,6 @@ function handleWebSocketClosed(params) {
   pendingWebSockets.delete(params.requestId);
   completedRequests.set(params.requestId, entry);
 
-  // Associate with open action windows
-  associateRequestWithActions(entry);
-
   // Reset the network-idle timer
   scheduleNetworkIdleCheck();
 
@@ -401,7 +390,7 @@ function handleWebSocketClosed(params) {
 }
 
 // ---------------------------------------------------------------------------
-// Sliding Window Context Aggregation
+// Timeline & network summaries
 // ---------------------------------------------------------------------------
 
 /**
@@ -424,45 +413,61 @@ function handleWebSocketClosed(params) {
  */
 
 /**
- * @typedef {Object} PendingAction
- * @property {Object} action
- * @property {number} openUntil  - performance.now() deadline
- * @property {NetworkEntry[]} collectedRequests
- * @property {string} contextId
- */
-
-/**
  * @typedef {Object} ContextBlock
  * @property {string} context_id
  * @property {number} timestamp
+ * @property {string} [timestamp_cst]
  * @property {Object} [state]
  * @property {Object} [action]
  * @property {Array}  [triggered_network]
  * @property {string} [post_action_a11y_tree_summary]
  */
 
-function associateRequestWithActions(entry) {
-  const now = performance.now();
-  for (const pa of pendingActions) {
-    if (now <= pa.openUntil) {
-      pa.collectedRequests.push(entry);
+/**
+ * Assign every completed request to exactly one timeline block using wall time:
+ * latest block with block.timestamp <= request_start_ms (requests before the
+ * first block go to INITIAL_LOAD). Export-time only — no orphan requests.
+ * @param {ContextBlock[]} timelineBlocks
+ * @param {NetworkEntry[]} allRequestEntries
+ */
+function assignCompletedRequestsToTimeline(timelineBlocks, allRequestEntries) {
+  if (!timelineBlocks.length) return;
+
+  for (const b of timelineBlocks) {
+    b.triggered_network = [];
+  }
+
+  const sorted = [...allRequestEntries].sort((a, b) => a.startTime - b.startTime);
+  const firstTs = timelineBlocks[0].timestamp;
+
+  for (const entry of sorted) {
+    const reqMs = Math.round(entry.startTime * 1000);
+    let idx = 0;
+    if (reqMs >= firstTs) {
+      for (let i = timelineBlocks.length - 1; i >= 0; i--) {
+        if (timelineBlocks[i].timestamp <= reqMs) {
+          idx = i;
+          break;
+        }
+      }
     }
+    timelineBlocks[idx].triggered_network.push(toNetworkSummary(entry));
   }
 }
 
 /**
- * Receive a user action from the content script, open a sliding window,
- * and push a new context block placeholder to the timeline.
+ * Receive a user action from the content script and push a context block.
  */
 function handleUserAction(payload) {
   if (recorderState !== 'recording') return;
   if (Date.now() - recordingStartTime < RECORDING_GRACE_MS) return;
 
-  const contextId = nextContextId();
-  const now = performance.now();
-
-  /** @type {PendingAction} */
-  const pendingAction = {
+  const ts = Date.now();
+  /** @type {ContextBlock} */
+  const block = {
+    context_id: nextContextId(),
+    timestamp: ts,
+    timestamp_cst: formatTimestampCST(ts),
     action: {
       type: payload.actionType,
       target_element: payload.targetDescriptor,
@@ -470,91 +475,34 @@ function handleUserAction(payload) {
       id: payload.id,
       aria_label: payload.ariaLabel,
     },
-    openUntil: now + ACTION_WINDOW_MS,
-    collectedRequests: [],
-    contextId,
-  };
-
-  // Also sweep already-completed requests that fall within this window.
-  // CDP startTime is in seconds since epoch; convert to ms for comparison.
-  const windowStartMs = Date.now() - ACTION_WINDOW_MS;
-  for (const entry of completedRequests.values()) {
-    if (entry.startTime * 1000 >= windowStartMs) {
-      pendingAction.collectedRequests.push(entry);
-    }
-  }
-
-  pendingActions.push(pendingAction);
-
-  /** @type {ContextBlock} */
-  const block = {
-    context_id: contextId,
-    timestamp: Date.now(),
-    action: pendingAction.action,
-    triggered_network: null, // filled in later
-    post_action_a11y_tree_summary: null, // filled in later
+    triggered_network: null,
+    post_action_a11y_tree_summary: null,
   };
   timeline.push(block);
-
-  // Schedule finalisation after window closes
-  setTimeout(() => finaliseAction(pendingAction, block), ACTION_WINDOW_MS + 100);
-}
-
-/**
- * After the sliding window closes, populate the context block with collected
- * network entries, then wait for network idle before capturing A11y.
- */
-async function finaliseAction(pendingAction, block) {
-  // Remove from pending list
-  const idx = pendingActions.indexOf(pendingAction);
-  if (idx !== -1) pendingActions.splice(idx, 1);
-
-  // Populate triggered_network
-  block.triggered_network = pendingAction.collectedRequests.map(toNetworkSummary);
 }
 
 /**
  * Handle a Page.frameNavigated CDP event to detect SPA URL changes.
- * Creates a new URL_CHANGE context block and opens a sliding window to
- * associate subsequent network requests with the navigation.
  */
 function handleFrameNavigated(params) {
-  if (!initialLoadComplete) return; // ignore navigations before recording is ready
+  if (!initialLoadComplete) return;
   if (recorderState !== 'recording') return;
 
   const { frame } = params;
-  if (frame.parentId) return; // sub-frame — only track main frame
+  if (frame.parentId) return;
 
   const newUrl = frame.url;
-  if (!newUrl || newUrl === currentNavigationUrl) return; // no real change
+  if (!newUrl || newUrl === currentNavigationUrl) return;
 
   currentNavigationUrl = newUrl;
   console.log('[WebTape] URL_CHANGE detected:', newUrl);
 
-  const contextId = nextContextId();
-  const now = performance.now();
-
-  const pendingNav = {
-    action: null,
-    openUntil: now + ACTION_WINDOW_MS,
-    collectedRequests: [],
-    contextId,
-  };
-
-  // Back-scan requests that arrived just before the navigation (same window)
-  const windowStartMs = Date.now() - ACTION_WINDOW_MS;
-  for (const entry of completedRequests.values()) {
-    if (entry.startTime * 1000 >= windowStartMs) {
-      pendingNav.collectedRequests.push(entry);
-    }
-  }
-
-  pendingActions.push(pendingNav);
-
+  const ts = Date.now();
   /** @type {ContextBlock} */
   const block = {
-    context_id: contextId,
-    timestamp: Date.now(),
+    context_id: nextContextId(),
+    timestamp: ts,
+    timestamp_cst: formatTimestampCST(ts),
     state: {
       type: 'URL_CHANGE',
       url: newUrl,
@@ -564,12 +512,13 @@ function handleFrameNavigated(params) {
   };
   timeline.push(block);
 
-  // Fetch the actual page title asynchronously (tab title updates after navigation)
   chrome.tabs.get(activeTabId).then((tab) => {
     if (tab && tab.title) block.state.title = tab.title;
   }).catch(() => {});
+}
 
-  setTimeout(() => finaliseAction(pendingNav, block), ACTION_WINDOW_MS + 100);
+function responseBasenameFromReqId(reqId) {
+  return `${reqId.replace(/^req_/, 'res_')}.json`;
 }
 
 function toNetworkSummary(entry) {
@@ -580,12 +529,13 @@ function toNetworkSummary(entry) {
     status: entry.status,
     type: entry.entryType || 'http',
     detail_path: {
-      request: `requests/${entry.reqId}_body.json`,
-      response: `responses/${entry.reqId}_res.json`,
+      request: `requests/${entry.reqId}.json`,
+      response: `responses/${responseBasenameFromReqId(entry.reqId)}`,
     },
   };
 
-  if (entry.status >= 200 && entry.status < 300) {
+  const st = entry.status ?? 0;
+  if (st >= 200 && st < 300) {
     const body = entry.entryType === 'sse'
       ? entry.sseEvents
       : entry.entryType === 'websocket'
@@ -682,10 +632,12 @@ async function startRecording(tabId, refreshFirst) {
   console.log('[WebTape] Capturing initial page info and A11y snapshot…');
   const tab = await chrome.tabs.get(tabId);
   const initialA11y = await captureA11ySummary();
+  const ts = Date.now();
   /** @type {ContextBlock} */
   const initialBlock = {
     context_id: nextContextId(),
-    timestamp: Date.now(),
+    timestamp: ts,
+    timestamp_cst: formatTimestampCST(ts),
     state: {
       type: 'INITIAL_LOAD',
       url: tab.url || '',
@@ -702,24 +654,60 @@ async function startRecording(tabId, refreshFirst) {
   currentNavigationUrl = tab.url || '';
   initialLoadComplete = true;
 
-  // Open a sliding window to associate network requests that fired during page
-  // load (back-scan already-completed + forward-collect for ACTION_WINDOW_MS).
-  const initialPending = {
-    action: null,
-    openUntil: performance.now() + ACTION_WINDOW_MS,
-    collectedRequests: [],
-    contextId: initialBlock.context_id,
-  };
-  const initWindowStartMs = Date.now() - ACTION_WINDOW_MS;
-  for (const entry of completedRequests.values()) {
-    if (entry.startTime * 1000 >= initWindowStartMs) {
-      initialPending.collectedRequests.push(entry);
-    }
-  }
-  pendingActions.push(initialPending);
-  setTimeout(() => finaliseAction(initialPending, initialBlock), ACTION_WINDOW_MS + 100);
-
   console.log('[WebTape] Recording started successfully.');
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+function waitForTabLoadComplete(tabId) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    function finish() {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    }
+    function onUpdated(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === 'complete') finish();
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        if (!settled) {
+          settled = true;
+          chrome.tabs.onUpdated.removeListener(onUpdated);
+          reject(new Error(chrome.runtime.lastError.message));
+        }
+        return;
+      }
+      if (tab.status === 'complete') finish();
+    });
+  });
+}
+
+/**
+ * Open a tab at URL (http/https) and start recording after load completes.
+ * @param {string} targetUrlRaw
+ */
+async function startRecordingFromSchemeUrl(targetUrlRaw) {
+  let u = (targetUrlRaw || '').trim();
+  if (!u) throw new Error('Empty URL.');
+  if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+  let parsed;
+  try {
+    parsed = new URL(u);
+  } catch {
+    throw new Error('Invalid URL.');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http(s) URLs are allowed.');
+  }
+  const tab = await chrome.tabs.create({ url: u, active: true });
+  await waitForTabLoadComplete(tab.id);
+  await startRecording(tab.id, false);
 }
 
 async function stopAndExport() {
@@ -773,6 +761,8 @@ async function stopAndExport() {
 
   const allRequests = [...completedRequests.values()];
 
+  assignCompletedRequestsToTimeline(timeline, allRequests);
+
   // Build snapshots map: context_id → a11y tree text (for action blocks only)
   const snapshotsData = {};
   for (const block of timeline) {
@@ -783,7 +773,11 @@ async function stopAndExport() {
 
   // Level 1: index.json (skeleton only)
   const indexData = timeline.map((block) => {
-    const entry = { context_id: block.context_id, timestamp: block.timestamp };
+    const entry = {
+      context_id: block.context_id,
+      timestamp: block.timestamp,
+      timestamp_cst: block.timestamp_cst || formatTimestampCST(block.timestamp),
+    };
     if (block.state) {
       entry.state = block.state;
     }
@@ -814,19 +808,26 @@ async function stopAndExport() {
   }
 
   for (const entry of allRequests) {
+    const reqWallMs = Math.round(entry.startTime * 1000);
     const reqPayload = {
       req_id: entry.reqId,
+      timestamp_cst: formatTimestampCST(reqWallMs),
       type: entry.entryType || 'http',
       method: entry.method,
       url: entry.url,
       headers: entry.requestHeaders,
       body: tryParseJson(entry.requestBody),
     };
-    requestsData[`${entry.reqId}_body.json`] = reqPayload;
+    requestsData[`${entry.reqId}.json`] = reqPayload;
+
+    const resWallMs = entry.endTime != null
+      ? Math.round(entry.endTime * 1000)
+      : reqWallMs;
 
     // Build response payload based on entry type
     const resPayload = {
       req_id: entry.reqId,
+      timestamp_cst: formatTimestampCST(resWallMs),
       type: entry.entryType || 'http',
       status: entry.status,
       headers: entry.responseHeaders,
@@ -841,7 +842,7 @@ async function stopAndExport() {
       resPayload.body = tryParseJson(entry.responseBody);
     }
 
-    responsesData[`${entry.reqId}_res.json`] = resPayload;
+    responsesData[responseBasenameFromReqId(entry.reqId)] = resPayload;
   }
 
   try {
@@ -872,11 +873,11 @@ async function stopAndExport() {
         throw new Error('Webhook URL must use http or https protocol.');
       }
 
-      const now = new Date();
+      const now = Date.now();
       const payload = {
         meta: {
-          timestamp: now.toISOString(),
-          epoch: now.getTime(),
+          timestamp: formatTimestampCST(now),
+          epoch: now,
           version: chrome.runtime.getManifest().version,
           source: 'WebTape',
           hostname: siteHostname || undefined,
@@ -912,10 +913,10 @@ async function stopAndExport() {
       // Download: build ZIP and trigger download
       const zip = new JSZip();
 
-      const now = new Date();
+      const nowMs = Date.now();
       zip.file('meta.json', JSON.stringify({
-        timestamp: now.toISOString(),
-        epoch: now.getTime(),
+        timestamp: formatTimestampCST(nowMs),
+        epoch: nowMs,
         version: chrome.runtime.getManifest().version,
         source: 'WebTape',
         hostname: siteHostname || undefined,
@@ -947,8 +948,9 @@ async function stopAndExport() {
       const domain = siteHostname || 'unknown';
 
       const pad = (n, len = 2) => String(n).padStart(len, '0');
-      const datePart = `${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const dl = new Date(nowMs);
+      const datePart = `${pad(dl.getMonth() + 1)}${pad(dl.getDate())}`;
+      const timePart = `${pad(dl.getHours())}${pad(dl.getMinutes())}${pad(dl.getSeconds())}`;
       const filename = `${domain}-${datePart}-${timePart}.zip`;
 
       console.log('[WebTape] Starting download:', filename);
@@ -1084,6 +1086,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ error: e.message }));
     return true; // async
+  }
+
+  if (type === 'SCHEME_START_RECORDING') {
+    startRecordingFromSchemeUrl(message.url)
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ error: e.message }));
+    return true;
   }
 
   if (type === 'STOP_EXPORT') {

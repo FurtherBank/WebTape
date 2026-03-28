@@ -193,8 +193,16 @@ function makeNetworkEntryRenderer(
 ) {
   return (net: NetworkSummary): string => {
     const lines: string[] = [];
-    const reqData = requests[`${net.req_id}_body.json`];
-    const resData = responses[`${net.req_id}_res.json`];
+    const reqKey = net.detail_path.request.replace(/^requests\//, '');
+    const resKey = net.detail_path.response.replace(/^responses\//, '');
+    const reqData =
+      requests[reqKey] ??
+      requests[`${net.req_id}.json`] ??
+      requests[`${net.req_id}_body.json`];
+    const resData =
+      responses[resKey] ??
+      responses[`${net.req_id.replace(/^req_/, 'res_')}.json`] ??
+      responses[`${net.req_id}_res.json`];
 
     const sizeHint = net.response_body_bytes != null ? ` (${fmtBytes(net.response_body_bytes)})` : '';
     lines.push(`#### [${net.req_id}] ${net.method} ${net.url} → ${net.status ?? '?'}${sizeHint}`);
@@ -252,10 +260,15 @@ function collectOrphanRequests(payload: WebTapePayload, processedTimeline: Conte
 
   const orphans: OrphanRequest[] = [];
   for (const key of Object.keys(payload.content.requests)) {
-    const reqId = key.replace(/_body\.json$/, '');
+    const reqId = key.endsWith('_body.json')
+      ? key.slice(0, -'_body.json'.length)
+      : key.slice(0, -'.json'.length);
     if (referenced.has(reqId)) continue;
     const reqData = payload.content.requests[key];
-    const resData = payload.content.responses[`${reqId}_res.json`];
+    const resStem = reqId.replace(/^req_/, 'res_');
+    const resData =
+      payload.content.responses[`${resStem}.json`] ??
+      payload.content.responses[`${reqId}_res.json`];
     if (!reqData || !isAllowedProtocol(reqData.url)) continue;
 
     let sizeHint = '';

@@ -16,6 +16,7 @@ const settingsArrow = document.getElementById('settingsArrow');
 const exportMode = document.getElementById('exportMode');
 const webhookRow = document.getElementById('webhookRow');
 const webhookUrl = document.getElementById('webhookUrl');
+const btnRegisterScheme = document.getElementById('btnRegisterScheme');
 
 let statsInterval = null;
 
@@ -234,6 +235,19 @@ exportMode.addEventListener('change', () => {
 webhookUrl.addEventListener('input', () => {
   saveSettings();
 });
+
+if (btnRegisterScheme) {
+  btnRegisterScheme.addEventListener('click', () => {
+    setMessage('');
+    try {
+      const template = chrome.runtime.getURL('record-launcher.html?nav=%s');
+      navigator.registerProtocolHandler('web+webtape', template);
+      setMessage('已请求注册 web+webtape，请按浏览器提示确认。', 'success');
+    } catch (e) {
+      setMessage((e && e.message) || '注册失败', 'error');
+    }
+  });
+}
 
 // Load persisted settings (and persist resolved defaults so background.js reads
 // consistent values even if the user never interacts with the settings panel).

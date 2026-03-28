@@ -41,6 +41,8 @@ export interface SavedIndexFile {
 export interface ContextBlock {
   context_id: string;
   timestamp: number;
+  /** Asia/Shanghai (+08:00) instant from the extension, e.g. 2026-03-28T15:30:45.123+08:00 */
+  timestamp_cst?: string;
   state?: {
     type: string;
     url: string;
@@ -75,6 +77,8 @@ export interface NetworkSummary {
 
 export interface RequestEntry {
   req_id: string;
+  /** Asia/Shanghai (+08:00), request start wall time */
+  timestamp_cst?: string;
   type: 'http' | 'sse' | 'websocket';
   method: string;
   url: string;
@@ -84,6 +88,8 @@ export interface RequestEntry {
 
 export interface ResponseEntry {
   req_id: string;
+  /** Asia/Shanghai (+08:00), response completion wall time when available */
+  timestamp_cst?: string;
   type: 'http' | 'sse' | 'websocket';
   status: number | null;
   headers: Record<string, string> | null;
