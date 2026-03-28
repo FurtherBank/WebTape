@@ -1,10 +1,23 @@
 'use strict';
 
 importScripts('rules.js');
-importScripts('time-format.js');
 importScripts('lib/jszip.min.js');
 
-const { formatTimestampCST } = self.WebTapeTime;
+/**
+ * Asia/Shanghai wall time (+08:00, fixed offset) with ms — no Intl fractionalSecondDigits
+ * (avoids SW / engine quirks) and no cross-file init on `self`.
+ * @param {number} epochMs
+ * @returns {string}
+ */
+function formatTimestampCST(epochMs) {
+  const sh = new Date(epochMs + 8 * 60 * 60 * 1000);
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return (
+    `${sh.getUTCFullYear()}-${pad(sh.getUTCMonth() + 1)}-${pad(sh.getUTCDate())}` +
+    `T${pad(sh.getUTCHours())}:${pad(sh.getUTCMinutes())}:${pad(sh.getUTCSeconds())}` +
+    `.${pad(sh.getUTCMilliseconds(), 3)}+08:00`
+  );
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -57,7 +70,7 @@ let recordingStartTime = 0;
 /** @type {string} Current page URL, tracked to detect SPA navigation changes */
 let currentNavigationUrl = '';
 
-/** @type {boolean} Set to true once the INITIAL_LOAD block has been created */
+/** @type {boolean} Set to true once the INITIAL block has been created */
 let initialLoadComplete = false;
 
 // Request capture functions — sourced from rules.js (WebTapeRules)
@@ -426,7 +439,7 @@ function handleWebSocketClosed(params) {
 /**
  * Assign every completed request to exactly one timeline block using wall time:
  * latest block with block.timestamp <= request_start_ms (requests before the
- * first block go to INITIAL_LOAD). Export-time only — no orphan requests.
+ * first block go to INITIAL). Export-time only — no orphan requests.
  * @param {ContextBlock[]} timelineBlocks
  * @param {NetworkEntry[]} allRequestEntries
  */
@@ -639,7 +652,7 @@ async function startRecording(tabId, refreshFirst) {
     timestamp: ts,
     timestamp_cst: formatTimestampCST(ts),
     state: {
-      type: 'INITIAL_LOAD',
+      type: 'INITIAL',
       url: tab.url || '',
       title: tab.title || '',
       fav_icon_url: tab.favIconUrl || '',

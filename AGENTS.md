@@ -5,6 +5,14 @@
 - **根目录** — Chrome 扩展插件（`background.js`、`content.js`、`popup.js` 等）
 - **`packages/webtape-receiver/`** — Node.js CLI 工具，接收 webhook 数据并分析录制结果
 
+## 开发测试
+
+### webtape-receiver
+
+编辑完代码后：
+- npm start 关联全局命令行
+- webtape-receiver serve 运行
+
 ## 发布流程
 
 ### 插件发布（Chrome Extension）

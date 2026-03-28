@@ -16,7 +16,7 @@ const settingsArrow = document.getElementById('settingsArrow');
 const exportMode = document.getElementById('exportMode');
 const webhookRow = document.getElementById('webhookRow');
 const webhookUrl = document.getElementById('webhookUrl');
-const btnRegisterScheme = document.getElementById('btnRegisterScheme');
+const btnCopyLauncherUrl = document.getElementById('btnCopyLauncherUrl');
 
 let statsInterval = null;
 
@@ -236,15 +236,16 @@ webhookUrl.addEventListener('input', () => {
   saveSettings();
 });
 
-if (btnRegisterScheme) {
-  btnRegisterScheme.addEventListener('click', () => {
+if (btnCopyLauncherUrl) {
+  btnCopyLauncherUrl.addEventListener('click', async () => {
     setMessage('');
+    const base = chrome.runtime.getURL('record-launcher.html');
+    const example = `${base}?url=${encodeURIComponent('https://example.com')}`;
     try {
-      const template = chrome.runtime.getURL('record-launcher.html?nav=%s');
-      navigator.registerProtocolHandler('web+webtape', template);
-      setMessage('已请求注册 web+webtape，请按浏览器提示确认。', 'success');
-    } catch (e) {
-      setMessage((e && e.message) || '注册失败', 'error');
+      await navigator.clipboard.writeText(example);
+      setMessage('已复制示例链接到剪贴板，可改域名后再粘贴到地址栏。', 'success');
+    } catch (_e) {
+      setMessage('复制失败，请手动复制地址栏中的 record-launcher 链接。', 'error');
     }
   });
 }

@@ -86,11 +86,12 @@ program
       autoAnalyze,
       analyzerBackend: backend,
       analyzerModel: opts.model,
-      onReceive(sessionDir, payload) {
+      onReceive(sessionDir, payload, metrics) {
         const actions = payload.content['index.json'].filter((b) => b.action).length;
         const requests = Object.keys(payload.content.requests).length;
+        const nonAiMs = Math.round(metrics.totalNonAiMs);
         console.log('');
-        console.log(chalk.green('  ✓ 收到录制数据'));
+        console.log(chalk.green('  ✓ 收到录制数据') + chalk.gray(` (${nonAiMs}ms)`));
         console.log(`    ${chalk.gray('会话')}    ${sessionDir}`);
         console.log(`    ${chalk.gray('操作数')}  ${actions}`);
         console.log(`    ${chalk.gray('请求数')}  ${requests}`);

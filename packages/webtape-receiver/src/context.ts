@@ -14,7 +14,8 @@ import {
   SENSITIVE_HEADER_RULES,
   HEADER_VALUE_MAX_LENGTH,
   BODY_FULL_LIMIT,
-  BODY_PREVIEW_LIMIT,
+  BODY_OVERSIZE_HINT_LT_LARGE,
+  BODY_OVERSIZE_HINT_LT_HUGE,
   isAllowedProtocol,
   STRIP_FIRST_CLICK,
 } from './rules.js';
@@ -31,11 +32,14 @@ function loadTemplate(): string {
   return cachedTemplate;
 }
 
-function renderHeaders(headers: Record<string, string> | null | undefined): string | null {
+function renderHeaders(
+  headers: Record<string, string> | null | undefined,
+  role: 'request' | 'response',
+): string | null {
   if (!headers) return null;
   const lines: string[] = [];
   for (const [key, value] of Object.entries(headers)) {
-    if (isNoiseHeader(key)) continue;
+    if (isNoiseHeader(key, role)) continue;
     const lower = key.toLowerCase();
     const sensitiveRule = SENSITIVE_HEADER_RULES[lower];
     if (sensitiveRule === 'cookie_names') {
@@ -50,7 +54,22 @@ function renderHeaders(headers: Record<string, string> | null | undefined): stri
   return lines.length > 0 ? lines.join('\n') : null;
 }
 
-function renderBody(body: unknown): { text: string; lang: string; byteSize: number; truncated: boolean } | null {
+function bodyOversizeHint(byteSize: number, role: 'request' | 'response'): string {
+  const noun = role === 'request' ? '请求' : '响应';
+  if (byteSize < BODY_OVERSIZE_HINT_LT_LARGE) {
+    return `请查看原始${noun}记录`;
+  }
+  if (byteSize < BODY_OVERSIZE_HINT_LT_HUGE) {
+    return `${noun}体较大，请小心查看原始记录分析`;
+  }
+  return `${noun}体过大，疑似包含大文件 base64 等情况，请审慎阅读`;
+}
+
+type RenderBodyResult =
+  | { mode: 'full'; text: string; lang: string; byteSize: number }
+  | { mode: 'oversize'; byteSize: number; hint: string };
+
+function renderBody(body: unknown): RenderBodyResult | null {
   if (body == null) return null;
   let text: string;
   let lang = '';
@@ -70,14 +89,9 @@ function renderBody(body: unknown): { text: string; lang: string; byteSize: numb
 
   const byteSize = Buffer.byteLength(text, 'utf-8');
   if (text.length <= BODY_FULL_LIMIT) {
-    return { text, lang, byteSize, truncated: false };
+    return { mode: 'full', text, lang, byteSize };
   }
-  return {
-    text: text.slice(0, BODY_PREVIEW_LIMIT) + '\n…(truncated)',
-    lang,
-    byteSize,
-    truncated: true,
-  };
+  return { mode: 'oversize', byteSize, hint: bodyOversizeHint(byteSize, 'response') };
 }
 
 function fmtBytes(bytes: number): string {
@@ -96,9 +110,8 @@ function getContentType(headers: Record<string, string> | null | undefined): str
 
 /**
  * Render request body info for the network entry summary.
- * - JSON + small: show content-type, size, and inline JSON
- * - Other / large: show content-type and size only
- * - No body: return null (caller skips)
+ * - 不超过 BODY_FULL_LIMIT：完整展示（JSON 或纯文本）
+ * - 超过阈值：仅类型与大小 + 按体积分级的提示（不写入正文）
  */
 function renderRequestBody(body: unknown, headers: Record<string, string> | null | undefined): string[] | null {
   if (body == null) return null;
@@ -127,13 +140,14 @@ function renderRequestBody(body: unknown, headers: Record<string, string> | null
   const typePart = contentType ?? (isJson ? 'application/json' : 'text/plain');
   const meta = `${typePart}, ${fmtBytes(byteSize)}`;
 
-  if (isJson && raw.length <= BODY_FULL_LIMIT) {
+  if (raw.length <= BODY_FULL_LIMIT) {
     lines.push(`入参 (${meta}):`);
-    lines.push('```json');
+    lines.push('```' + (isJson ? 'json' : ''));
     lines.push(raw);
     lines.push('```');
   } else {
     lines.push(`入参: ${meta}`);
+    lines.push(bodyOversizeHint(byteSize, 'request'));
   }
 
   return lines;
@@ -209,7 +223,7 @@ function makeNetworkEntryRenderer(
     lines.push('');
 
     if (reqData) {
-      const hdr = renderHeaders(reqData.headers);
+      const hdr = renderHeaders(reqData.headers, 'request');
       if (hdr) {
         lines.push('请求头:');
         lines.push('```');
@@ -221,20 +235,18 @@ function makeNetworkEntryRenderer(
     }
 
     if (resData) {
-      const hdr = renderHeaders(resData.headers);
-      if (hdr) {
-        lines.push('响应头:');
-        lines.push('```');
-        lines.push(hdr);
-        lines.push('```');
-      }
       const body = renderBody(resData.body);
       if (body) {
-        const note = body.truncated ? ` (${fmtBytes(body.byteSize)}, 已截断)` : '';
-        lines.push(`响应体${note}:`);
-        lines.push('```' + body.lang);
-        lines.push(body.text);
-        lines.push('```');
+        if (body.mode === 'full') {
+          lines.push('响应体:');
+          lines.push('```' + body.lang);
+          lines.push(body.text);
+          lines.push('```');
+        } else {
+          lines.push(`响应体 (${fmtBytes(body.byteSize)}):`);
+          lines.push('');
+          lines.push(body.hint);
+        }
       }
     }
 

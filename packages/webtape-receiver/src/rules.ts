@@ -19,13 +19,24 @@
 // 1. Header Noise Filtering — context 综述中过滤掉的无关请求/响应头
 // =========================================================================
 
-/** 精确匹配的噪音 header 名（全部小写） */
+/** 精确匹配的噪音 header 名（全部小写）— 请求+响应均适用 */
 export const NOISE_HEADERS = new Set([
   'accept-encoding', 'accept-language', 'cache-control', 'connection',
-  'content-length', 'dnt', 'etag', 'if-modified-since', 'if-none-match',
-  'keep-alive', 'pragma', 'server', 'vary', 'date', 'age', 'expires',
-  'last-modified', 'transfer-encoding', 'x-powered-by', 'x-request-id',
-  'x-frame-options', 'x-content-type-options', 'x-xss-protection',
+  'content-length', 'content-type', 'dnt', 'etag', 'if-modified-since',
+  'if-none-match', 'keep-alive', 'pragma', 'server', 'vary', 'date', 'age',
+  'expires', 'last-modified', 'transfer-encoding', 'x-powered-by',
+  'x-request-id', 'x-frame-options', 'x-content-type-options',
+  'x-xss-protection',
+]);
+
+/** 仅请求：浏览器几乎总会带的头，context 中不展示 */
+export const NOISE_HEADERS_REQUEST_ONLY = new Set([
+  'accept', 'referer', 'user-agent', 'x-requested-with',
+]);
+
+/** 仅响应：CDN/网关追踪、耗时类，对业务链综述价值低 */
+export const NOISE_HEADERS_RESPONSE_ONLY = new Set([
+  'server-timing', 'x-req-id', 'x-server-cost',
 ]);
 
 /** 前缀匹配的噪音 header 名（全部小写） */
@@ -37,11 +48,21 @@ export const NOISE_HEADER_PREFIXES = [
 
 /**
  * 判断一个 header 是否为噪音（应在 context 综述中过滤掉）。
+ * @param role 传入 `request` / `response` 时可应用按侧过滤（如 UA、content-type、eo-*）。
  */
-export function isNoiseHeader(name: string): boolean {
+export function isNoiseHeader(
+  name: string,
+  role?: 'request' | 'response',
+): boolean {
   const lower = name.toLowerCase();
   if (NOISE_HEADERS.has(lower)) return true;
-  return NOISE_HEADER_PREFIXES.some((p) => lower.startsWith(p));
+  if (NOISE_HEADER_PREFIXES.some((p) => lower.startsWith(p))) return true;
+  if (role === 'request' && NOISE_HEADERS_REQUEST_ONLY.has(lower)) return true;
+  if (role === 'response') {
+    if (NOISE_HEADERS_RESPONSE_ONLY.has(lower)) return true;
+    if (lower.startsWith('eo-')) return true;
+  }
+  return false;
 }
 
 // =========================================================================
@@ -62,14 +83,15 @@ export const SENSITIVE_HEADER_RULES: Record<string, 'cookie_names' | 'presence_o
 export const HEADER_VALUE_MAX_LENGTH = 300;
 
 // =========================================================================
-// 3. Body Rendering — 响应体/请求体截断阈值
+// 3. Body Rendering — context 中的 body 长度阈值与超大提示档位（按字节）
 // =========================================================================
 
-/** body 全文展示阈值（字符数），小于此值完整展示 */
-export const BODY_FULL_LIMIT = 2000;
+/** body 全文展示阈值（JS 字符串 .length），不超过则完整写入 context */
+export const BODY_FULL_LIMIT = 1000;
 
-/** body 超过 BODY_FULL_LIMIT 时的预览截断长度 */
-export const BODY_PREVIEW_LIMIT = 500;
+/** 超过 BODY_FULL_LIMIT 时，依据 UTF-8 字节数选择提示语气 */
+export const BODY_OVERSIZE_HINT_LT_LARGE = 20 * 1024;
+export const BODY_OVERSIZE_HINT_LT_HUGE = 500 * 1024;
 
 // =========================================================================
 // 4. Protocol Filtering — context 综述中只展示安全协议的请求

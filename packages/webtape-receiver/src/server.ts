@@ -1,9 +1,22 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { performance } from 'node:perf_hooks';
 import { join } from 'node:path';
 import type { WorkspacePaths } from './workspace.js';
 import type { WebTapePayload } from './types.js';
 import { saveRecording } from './storage.js';
 import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
+
+/** 单次 webhook 收包后、启动 AI 之前的处理耗时（接收/解析 + 落盘与生成 _context.md） */
+export interface ReceivePersistMetrics {
+  /** 读取 HTTP 正文 */
+  readBodyMs: number;
+  /** JSON.parse 与 meta/content 校验 */
+  parseValidateMs: number;
+  /** saveRecording：写 requests/responses/snapshots/index.json 与 _context.md */
+  persistMs: number;
+  /** 以上三项之和，即非 AI 链路总耗时 */
+  totalNonAiMs: number;
+}
 
 export interface ServerOptions {
   port: number;
@@ -11,7 +24,7 @@ export interface ServerOptions {
   autoAnalyze: boolean;
   analyzerBackend: AnalyzerBackend;
   analyzerModel?: string;
-  onReceive?: (sessionDir: string, payload: WebTapePayload) => void;
+  onReceive?: (sessionDir: string, payload: WebTapePayload, metrics: ReceivePersistMetrics) => void;
   onAnalyzeLog?: (line: string) => void;
   onAnalyzeDone?: (result: AnalyzeResult) => void;
   onError?: (err: Error) => void;
@@ -67,7 +80,9 @@ export function createWebhookServer(opts: ServerOptions) {
     // Webhook endpoint
     if (req.method === 'POST' && (req.url === '/' || req.url === '/webhook')) {
       try {
+        const t0 = performance.now();
         const body = await readBody(req);
+        const t1 = performance.now();
         const payload: WebTapePayload = JSON.parse(body);
 
         if (!payload.meta || !payload.content) {
@@ -75,8 +90,18 @@ export function createWebhookServer(opts: ServerOptions) {
           return;
         }
 
+        const t2 = performance.now();
         const sessionDir = saveRecording(workspace, payload);
-        onReceive?.(sessionDir, payload);
+        const t3 = performance.now();
+
+        const metrics: ReceivePersistMetrics = {
+          readBodyMs: t1 - t0,
+          parseValidateMs: t2 - t1,
+          persistMs: t3 - t2,
+          totalNonAiMs: t3 - t0,
+        };
+
+        onReceive?.(sessionDir, payload, metrics);
 
         if (autoAnalyze) {
           runAnalysis(workspace, sessionDir, analyzerBackend, analyzerModel, onAnalyzeLog, onAnalyzeDone, onError);
@@ -86,6 +111,12 @@ export function createWebhookServer(opts: ServerOptions) {
           status: 'received',
           session: sessionDir,
           autoAnalyze,
+          timingMs: {
+            readBody: Math.round(metrics.readBodyMs * 10) / 10,
+            parseValidate: Math.round(metrics.parseValidateMs * 10) / 10,
+            persist: Math.round(metrics.persistMs * 10) / 10,
+            totalNonAi: Math.round(metrics.totalNonAiMs * 10) / 10,
+          },
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
