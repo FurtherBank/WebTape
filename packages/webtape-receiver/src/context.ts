@@ -243,7 +243,10 @@ function makeNetworkEntryRenderer(
           lines.push(body.text);
           lines.push('```');
         } else {
-          lines.push(`响应体 (${fmtBytes(body.byteSize)}):`);
+          // 与标题行一致：扩展在 timeline 里用紧凑 JSON 统计 response_body_bytes；
+          // renderBody 用 pretty JSON 估体积会偏大，优先展示录制时的字节数。
+          const displayBytes = net.response_body_bytes ?? body.byteSize;
+          lines.push(`响应体 (${fmtBytes(displayBytes)}):`);
           lines.push('');
           lines.push(body.hint);
         }

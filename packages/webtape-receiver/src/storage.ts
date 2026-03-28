@@ -189,13 +189,18 @@ export function saveRecording(
     'utf-8',
   );
 
+  const remappedRequests: WebTapePayload['content']['requests'] = {};
+  const remappedResponses: WebTapePayload['content']['responses'] = {};
+
   for (const [filename, data] of Object.entries(payload.content.requests)) {
     const oldStem = filename.replace(/\.json$/, '');
     const seq = idMap.get(oldStem) ?? seqFromReqId(oldStem);
     const newReqId = `req_${seq}`;
     const newFilename = `${newReqId}.json`;
 
-    const enrichedData = { ...withParsedJsonBody(data), _original_id: oldStem };
+    const parsedReq = withParsedJsonBody(data);
+    const enrichedData = { ...parsedReq, req_id: newReqId, _original_id: oldStem };
+    remappedRequests[newFilename] = enrichedData;
 
     writeFileSync(
       join(reqDir, newFilename),
@@ -211,10 +216,15 @@ export function saveRecording(
       : oldResStem;
     const seq = idMap.get(oldReqStem) ?? seqFromReqId(oldReqStem);
     const newFilename = `res_${seq}.json`;
+    const pairedReqId = `req_${seq}`;
+
+    const parsedRes = withParsedJsonBody(data);
+    const resPayload = { ...parsedRes, req_id: pairedReqId };
+    remappedResponses[newFilename] = resPayload;
 
     writeFileSync(
       join(resDir, newFilename),
-      JSON.stringify(withParsedJsonBody(data), null, 2),
+      JSON.stringify(resPayload, null, 2),
       'utf-8',
     );
   }
@@ -230,9 +240,18 @@ export function saveRecording(
   }
 
   const siteUrl = extractSiteUrl(payload);
+  const contextPayload: WebTapePayload = {
+    ...payload,
+    content: {
+      ...payload.content,
+      'index.json': updatedIndex,
+      requests: remappedRequests,
+      responses: remappedResponses,
+    },
+  };
   writeFileSync(
     join(sessionDir, '_context.md'),
-    renderAnalysisContext(payload, siteUrl),
+    renderAnalysisContext(contextPayload, siteUrl),
     'utf-8',
   );
 
