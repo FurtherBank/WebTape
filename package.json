@@ -1,6 +1,6 @@
 {
   "name": "webtape",
-  "version": "1.0.0",
+  "version": "1.2.2",
   "description": "Chrome Extension for recording web actions and network requests, exporting as structured ZIP for LLM analysis.",
   "private": true,
   "scripts": {

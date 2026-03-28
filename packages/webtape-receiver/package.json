@@ -1,6 +1,6 @@
 {
   "name": "webtape-receiver",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "CLI tool that receives WebTape webhook data, saves recordings, and analyzes web business logic API chains via AI.",
   "type": "module",
   "bin": {

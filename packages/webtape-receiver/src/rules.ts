@@ -31,7 +31,7 @@ export const NOISE_HEADERS = new Set([
 
 /** 仅请求：浏览器几乎总会带的头，context 中不展示 */
 export const NOISE_HEADERS_REQUEST_ONLY = new Set([
-  'accept', 'referer', 'user-agent', 'x-requested-with',
+  'accept', 'origin', 'referer', 'user-agent', 'x-requested-with',
 ]);
 
 /** 仅响应：CDN/网关追踪、耗时类，对业务链综述价值低 */

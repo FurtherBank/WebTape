@@ -74,7 +74,7 @@ let currentNavigationUrl = '';
 let initialLoadComplete = false;
 
 // Request capture functions — sourced from rules.js (WebTapeRules)
-const { shouldCaptureByType, isApiMimeType } = WebTapeRules;
+const { shouldCaptureByType, shouldRecordNetworkUrl, isApiMimeType } = WebTapeRules;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -207,7 +207,7 @@ async function captureSnapshotForTab(tabId) {
 // ---------------------------------------------------------------------------
 
 function handleRequestWillBeSent(params) {
-  if (!shouldCaptureByType(params.type, params.request.url)) return;
+  if (!shouldCaptureByType(params.type, params.request.url, params.request.method)) return;
 
   const reqId = nextRequestId();
   /** @type {NetworkEntry} */
@@ -318,6 +318,8 @@ async function handleLoadingFinished(params) {
  * CDP fires this before the HTTP upgrade handshake.
  */
 function handleWebSocketCreated(params) {
+  if (!shouldRecordNetworkUrl(params.url)) return;
+
   const reqId = nextRequestId();
   /** @type {NetworkEntry} */
   const entry = {

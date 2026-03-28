@@ -55,9 +55,22 @@ const WebTapeRules = (() => {
   const STATIC_EXT_RE = /\.(?:css|js|mjs|jsx|ts|tsx|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|otf|mp4|webm|ogg|mp3|wav|map)(?:[?#]|$)/i;
 
   /**
-   * 根据 CDP 资源类型和 URL 判断是否应该采集该请求。
+   * 扩展页/插件自身资源等，不参与业务链路采集。
    */
-  function shouldCaptureByType(resourceType, url) {
+  function shouldRecordNetworkUrl(url) {
+    if (!url || typeof url !== 'string') return true;
+    const scheme = url.trimStart().toLowerCase();
+    if (scheme.startsWith('chrome-extension:')) return false;
+    return true;
+  }
+
+  /**
+   * 根据 CDP 资源类型、URL、HTTP 方法判断是否应该采集该请求。
+   * @param {string} [method] 来自 CDP Network.Request 的 method（如忽略则不校验）
+   */
+  function shouldCaptureByType(resourceType, url, method) {
+    if (!shouldRecordNetworkUrl(url)) return false;
+    if (method && String(method).toUpperCase() === 'OPTIONS') return false;
     if (resourceType) {
       return ALLOWED_RESOURCE_TYPES.has(resourceType);
     }
@@ -116,6 +129,7 @@ const WebTapeRules = (() => {
     ALLOWED_RESOURCE_TYPES,
     ALLOWED_MIME_PATTERNS,
     STATIC_EXT_RE,
+    shouldRecordNetworkUrl,
     shouldCaptureByType,
     isApiMimeType,
 
