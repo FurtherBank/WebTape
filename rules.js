@@ -100,6 +100,24 @@ const WebTapeRules = (() => {
   /** 录制开始后忽略用户操作的宽限期（毫秒），避免误捕获启动点击 */
   const RECORDING_GRACE_MS = 800;
 
+  /**
+   * 由 scheme / record-launcher 触发录制时：在**已无进行中请求**的前提下，
+   * 持续静默超过该时间则自动停止并导出（毫秒）。
+   * 重型 SPA（如控制台类页面）常在首波请求后暂停数十秒再发起第二批接口，过短的窗口会过早导出。
+   */
+  const SCHEME_AUTO_IDLE_MS = 70_000;
+
+  /**
+   * scheme 录制至少持续该时长后，才允许因「空闲」自动停止（毫秒）。
+   * 避免首屏接口完成后、业务接口尚未发出就触发 idle 导出。
+   */
+  const SCHEME_MIN_RECORDING_BEFORE_IDLE_MS = 55_000;
+
+  /**
+   * 由 scheme / record-launcher 触发的录制上限时长，超时自动停止并导出（毫秒）。
+   */
+  const SCHEME_MAX_RECORDING_MS = 120_000;
+
   // =========================================================================
   // 3. A11y — 无障碍树快照过滤
   // =========================================================================
@@ -137,6 +155,9 @@ const WebTapeRules = (() => {
     NETWORK_IDLE_DELAY_MS,
     ACTION_WINDOW_MS,
     RECORDING_GRACE_MS,
+    SCHEME_AUTO_IDLE_MS,
+    SCHEME_MIN_RECORDING_BEFORE_IDLE_MS,
+    SCHEME_MAX_RECORDING_MS,
 
     // A11y
     A11Y_IGNORED_ROLES,

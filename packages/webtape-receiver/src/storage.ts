@@ -180,7 +180,13 @@ export function saveRecording(
     };
   });
   const savedIndex: SavedIndexFile = {
-    meta: { version: payload.meta.version },
+    meta: {
+      version: payload.meta.version,
+      recording_started_at_cst: payload.meta.recording_started_at_cst,
+      recording_started_at_epoch_ms: payload.meta.recording_started_at_epoch_ms,
+      recording_ended_at_cst: payload.meta.recording_ended_at_cst,
+      recording_ended_at_epoch_ms: payload.meta.recording_ended_at_epoch_ms,
+    },
     timeline: savedTimeline,
   };
   writeFileSync(

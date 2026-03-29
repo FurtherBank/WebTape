@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WebTape - Web Action Recorder",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Records user interactions and network requests on web pages, exports as structured ZIP for LLM analysis.",
   "permissions": [
     "debugger",

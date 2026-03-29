@@ -5,7 +5,13 @@
 
 ## 元数据
 
-- 录制时间: <%- meta.timestamp %>
+- 导出时间: <%- meta.timestamp %>（epoch_ms: <%- meta.epoch %>）
+<% if (meta.recording_started_at_cst) { -%>
+- 录制开始: <%- meta.recording_started_at_cst %><% if (meta.recording_started_at_epoch_ms != null) { %>（epoch_ms: <%- meta.recording_started_at_epoch_ms %>）<% } %>
+<% } -%>
+<% if (meta.recording_ended_at_cst) { -%>
+- 录制结束: <%- meta.recording_ended_at_cst %><% if (meta.recording_ended_at_epoch_ms != null) { %>（epoch_ms: <%- meta.recording_ended_at_epoch_ms %>）<% } %>
+<% } -%>
 <% if (meta.hostname) { -%>
 - 网站: <%- meta.hostname %>
 <% } -%>

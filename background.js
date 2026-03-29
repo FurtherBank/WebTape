@@ -30,6 +30,13 @@ let recorderState = 'idle';
 let activeTabId = null;
 
 /**
+ * Export options for the current recording only (e.g. from record-launcher / scheme).
+ * Cleared when a new recording starts without override, and after Stop & Export.
+ * @type {{ exportMode: 'download' | 'webhook', webhookUrl?: string } | null}
+ */
+let sessionExportOverride = null;
+
+/**
  * Timeline of context blocks accumulated during the recording session.
  * @type {Array<ContextBlock>}
  */
@@ -62,10 +69,34 @@ let requestCounter = 0;
 let networkIdleTimer = null;
 
 // Timing constants — sourced from rules.js (WebTapeRules)
-const { NETWORK_IDLE_DELAY_MS, RECORDING_GRACE_MS } = WebTapeRules;
+const {
+  NETWORK_IDLE_DELAY_MS,
+  RECORDING_GRACE_MS,
+  SCHEME_AUTO_IDLE_MS,
+  SCHEME_MIN_RECORDING_BEFORE_IDLE_MS,
+  SCHEME_MAX_RECORDING_MS,
+} = WebTapeRules;
+
+/** scheme / launcher 触发的本次录制是否启用自动停止 */
+let schemeAutoStopEnabled = false;
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let schemeMaxStopTimer = null;
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let schemeIdleStopTimer = null;
 
 /** @type {number} Timestamp (Date.now()) when recording started; used for grace period */
 let recordingStartTime = 0;
+
+/**
+ * CDP Network.* `timestamp` is monotonic seconds (tracing / navigation timeline), not Unix epoch.
+ * First seen value + current Date establish a bridge to wall-clock ms; if monotonic jumps backward
+ * (new document), re-anchor.
+ */
+let networkMonotonicOrigin = null;
+/** @type {number|null} */
+let networkWallOriginMs = null;
 
 /** @type {string} Current page URL, tracked to detect SPA navigation changes */
 let currentNavigationUrl = '';
@@ -96,8 +127,50 @@ function resetSession() {
   contextCounter = 0;
   requestCounter = 0;
   networkIdleTimer = null;
+  networkMonotonicOrigin = null;
+  networkWallOriginMs = null;
   currentNavigationUrl = '';
   initialLoadComplete = false;
+}
+
+/**
+ * @param {number} monotonicSec
+ * @returns {number}
+ */
+function wallMsFromNetworkMonotonic(monotonicSec) {
+  if (typeof monotonicSec !== 'number' || !Number.isFinite(monotonicSec)) {
+    return Date.now();
+  }
+  if (
+    networkMonotonicOrigin != null
+    && monotonicSec < networkMonotonicOrigin - 0.5
+  ) {
+    networkMonotonicOrigin = null;
+    networkWallOriginMs = null;
+  }
+  if (networkMonotonicOrigin == null) {
+    networkMonotonicOrigin = monotonicSec;
+    networkWallOriginMs = Date.now();
+  }
+  return networkWallOriginMs + (monotonicSec - networkMonotonicOrigin) * 1000;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {{ exportMode: 'download' | 'webhook', webhookUrl?: string } | null}
+ */
+function normalizeSessionExportPayload(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = /** @type {Record<string, unknown>} */ (raw);
+  let mode = String(o.exportMode || o.export || '').trim().toLowerCase();
+  const wh = String(o.webhookUrl || o.webhook || '').trim();
+  if (mode === 'zip') mode = 'download';
+  if (!mode && wh) mode = 'webhook';
+  if (mode !== 'download' && mode !== 'webhook') return null;
+  /** @type {{ exportMode: 'download' | 'webhook', webhookUrl?: string }} */
+  const out = { exportMode: mode };
+  if (wh) out.webhookUrl = wh;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,10 +279,20 @@ async function captureSnapshotForTab(tabId) {
 // Network Event Handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {NetworkEntry} entry
+ * @returns {number}
+ */
+function entryStartWallMs(entry) {
+  if (entry.startWallMs != null) return entry.startWallMs;
+  return Math.round(entry.startTime * 1000);
+}
+
 function handleRequestWillBeSent(params) {
   if (!shouldCaptureByType(params.type, params.request.url, params.request.method)) return;
 
   const reqId = nextRequestId();
+  const startWallMs = Math.round(wallMsFromNetworkMonotonic(params.timestamp));
   /** @type {NetworkEntry} */
   const entry = {
     reqId,
@@ -223,9 +306,12 @@ function handleRequestWillBeSent(params) {
     responseHeaders: null,
     responseBody: null,
     startTime: params.timestamp,
+    startWallMs: startWallMs,
     endTime: null,
+    endWallMs: null,
   };
   pendingRequests.set(params.requestId, entry);
+  refreshSchemeIdleDeadline();
   console.log('[WebTape] Captured request:', params.request.method, params.request.url,
     '(type:', params.type || 'unknown', ')');
 }
@@ -273,18 +359,21 @@ function handleEventSourceMessageReceived(params) {
     id: params.eventId || '',
     data: params.data || '',
   });
+  refreshSchemeIdleDeadline();
 }
 
 async function handleLoadingFinished(params) {
   const entry = pendingRequests.get(params.requestId);
   if (!entry) return;
   entry.endTime = params.timestamp;
+  entry.endWallMs = Math.round(wallMsFromNetworkMonotonic(params.timestamp));
 
   // For SSE entries, the body is the accumulated events — skip CDP body fetch
   if (entry.entryType === 'sse') {
     pendingRequests.delete(params.requestId);
     completedRequests.set(params.requestId, entry);
     scheduleNetworkIdleCheck();
+    refreshSchemeIdleDeadline();
     console.log('[WebTape] SSE stream completed:', entry.url,
       '— events:', entry.sseEvents ? entry.sseEvents.length : 0);
     return;
@@ -307,6 +396,7 @@ async function handleLoadingFinished(params) {
 
   // Reset the network-idle timer
   scheduleNetworkIdleCheck();
+  refreshSchemeIdleDeadline();
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +411,7 @@ function handleWebSocketCreated(params) {
   if (!shouldRecordNetworkUrl(params.url)) return;
 
   const reqId = nextRequestId();
+  const wsStartMs = Date.now();
   /** @type {NetworkEntry} */
   const entry = {
     reqId,
@@ -333,11 +424,15 @@ function handleWebSocketCreated(params) {
     status: null,
     responseHeaders: null,
     responseBody: null,
-    startTime: Date.now() / 1000, // Network.webSocketCreated does not carry a CDP timestamp
+    // webSocketCreated has no monotonic timestamp; use wall clock (sort/export use startWallMs)
+    startTime: wsStartMs / 1000,
+    startWallMs: wsStartMs,
     endTime: null,
+    endWallMs: null,
     wsMessages: [],
   };
   pendingWebSockets.set(params.requestId, entry);
+  refreshSchemeIdleDeadline();
   console.log('[WebTape] WebSocket created:', params.url);
 }
 
@@ -368,6 +463,7 @@ function handleWebSocketFrameSent(params) {
     opcode: frame.opcode || 1,
     data: frame.payloadData || '',
   });
+  refreshSchemeIdleDeadline();
 }
 
 /**
@@ -384,6 +480,7 @@ function handleWebSocketFrameReceived(params) {
     opcode: frame.opcode || 1,
     data: frame.payloadData || '',
   });
+  refreshSchemeIdleDeadline();
 }
 
 /**
@@ -394,11 +491,13 @@ function handleWebSocketClosed(params) {
   if (!entry) return;
 
   entry.endTime = params.timestamp;
+  entry.endWallMs = Math.round(wallMsFromNetworkMonotonic(params.timestamp));
   pendingWebSockets.delete(params.requestId);
   completedRequests.set(params.requestId, entry);
 
   // Reset the network-idle timer
   scheduleNetworkIdleCheck();
+  refreshSchemeIdleDeadline();
 
   console.log('[WebTape] WebSocket closed:', entry.url,
     '— messages:', entry.wsMessages.length);
@@ -422,7 +521,9 @@ function handleWebSocketClosed(params) {
  * @property {string|null} responseBody
  * @property {string|null} mimeType
  * @property {number} startTime
+ * @property {number} [startWallMs]
  * @property {number|null} endTime
+ * @property {number|null} [endWallMs]
  * @property {Array<{timestamp:number, event:string, id:string, data:string}>} [sseEvents]
  * @property {Array<{timestamp:number, direction:'sent'|'received', opcode:number, data:string}>} [wsMessages]
  */
@@ -452,11 +553,13 @@ function assignCompletedRequestsToTimeline(timelineBlocks, allRequestEntries) {
     b.triggered_network = [];
   }
 
-  const sorted = [...allRequestEntries].sort((a, b) => a.startTime - b.startTime);
+  const sorted = [...allRequestEntries].sort(
+    (a, b) => entryStartWallMs(a) - entryStartWallMs(b),
+  );
   const firstTs = timelineBlocks[0].timestamp;
 
   for (const entry of sorted) {
-    const reqMs = Math.round(entry.startTime * 1000);
+    const reqMs = entryStartWallMs(entry);
     let idx = 0;
     if (reqMs >= firstTs) {
       for (let i = timelineBlocks.length - 1; i >= 0; i--) {
@@ -475,6 +578,7 @@ function assignCompletedRequestsToTimeline(timelineBlocks, allRequestEntries) {
  */
 function handleUserAction(payload) {
   if (recorderState !== 'recording') return;
+  refreshSchemeIdleDeadline();
   if (Date.now() - recordingStartTime < RECORDING_GRACE_MS) return;
 
   const ts = Date.now();
@@ -526,6 +630,7 @@ function handleFrameNavigated(params) {
     triggered_network: null,
   };
   timeline.push(block);
+  refreshSchemeIdleDeadline();
 
   chrome.tabs.get(activeTabId).then((tab) => {
     if (tab && tab.title) block.state.title = tab.title;
@@ -593,11 +698,80 @@ async function onNetworkIdle() {
   }
 }
 
+function clearSchemeAutoStopTimersOnly() {
+  if (schemeMaxStopTimer !== null) {
+    clearTimeout(schemeMaxStopTimer);
+    schemeMaxStopTimer = null;
+  }
+  if (schemeIdleStopTimer !== null) {
+    clearTimeout(schemeIdleStopTimer);
+    schemeIdleStopTimer = null;
+  }
+}
+
+/**
+ * Scheme 自动停止：仅在无进行中网络条目时启动 idle 倒计时；录制未满最短时延后。
+ * 避免「首波请求完成 → 长间隙 → 误导出」导致漏采后续加载链路。
+ */
+function refreshSchemeIdleDeadline() {
+  if (!schemeAutoStopEnabled || recorderState !== 'recording') return;
+  if (schemeIdleStopTimer !== null) {
+    clearTimeout(schemeIdleStopTimer);
+    schemeIdleStopTimer = null;
+  }
+  const busy = pendingRequests.size > 0 || pendingWebSockets.size > 0;
+  if (busy) return;
+
+  const elapsed = Date.now() - recordingStartTime;
+  const scheduleIdleFire = () => {
+    schemeIdleStopTimer = setTimeout(() => {
+      schemeIdleStopTimer = null;
+      autoStopSchemeRecording('idle');
+    }, SCHEME_AUTO_IDLE_MS);
+  };
+
+  if (elapsed < SCHEME_MIN_RECORDING_BEFORE_IDLE_MS) {
+    schemeIdleStopTimer = setTimeout(() => {
+      schemeIdleStopTimer = null;
+      refreshSchemeIdleDeadline();
+    }, SCHEME_MIN_RECORDING_BEFORE_IDLE_MS - elapsed);
+    return;
+  }
+  scheduleIdleFire();
+}
+
+function armSchemeAutoStopTimers() {
+  clearSchemeAutoStopTimersOnly();
+  schemeAutoStopEnabled = true;
+  schemeMaxStopTimer = setTimeout(() => {
+    schemeMaxStopTimer = null;
+    autoStopSchemeRecording('max');
+  }, SCHEME_MAX_RECORDING_MS);
+  refreshSchemeIdleDeadline();
+}
+
+async function autoStopSchemeRecording(reason) {
+  if (!schemeAutoStopEnabled || recorderState !== 'recording') return;
+  clearSchemeAutoStopTimersOnly();
+  schemeAutoStopEnabled = false;
+  console.log('[WebTape] Scheme auto-stop:', reason);
+  try {
+    await stopAndExport();
+  } catch (e) {
+    console.error('[WebTape] Scheme auto-stop export failed:', e.message);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Recording Lifecycle
 // ---------------------------------------------------------------------------
 
-async function startRecording(tabId, refreshFirst) {
+/**
+ * @param {number} tabId
+ * @param {boolean} refreshFirst
+ * @param {{ sessionExport?: unknown, schemeAutoStop?: boolean }} [opts]
+ */
+async function startRecording(tabId, refreshFirst, opts) {
   console.log('[WebTape] startRecording called — tabId:', tabId, ', refreshFirst:', refreshFirst);
 
   if (recorderState !== 'idle') {
@@ -606,6 +780,12 @@ async function startRecording(tabId, refreshFirst) {
   }
 
   resetSession();
+  clearSchemeAutoStopTimersOnly();
+  schemeAutoStopEnabled = false;
+  sessionExportOverride = null;
+  if (opts && opts.sessionExport && typeof opts.sessionExport === 'object') {
+    sessionExportOverride = normalizeSessionExportPayload(opts.sessionExport);
+  }
   activeTabId = tabId;
   recorderState = 'recording';
 
@@ -670,6 +850,9 @@ async function startRecording(tabId, refreshFirst) {
   initialLoadComplete = true;
 
   console.log('[WebTape] Recording started successfully.');
+  if (opts && opts.schemeAutoStop) {
+    armSchemeAutoStopTimers();
+  }
 }
 
 /**
@@ -706,8 +889,9 @@ function waitForTabLoadComplete(tabId) {
 /**
  * Open a tab at URL (http/https) and start recording after load completes.
  * @param {string} targetUrlRaw
+ * @param {unknown} [sessionExportRaw] Optional export options from scheme (merged at export time).
  */
-async function startRecordingFromSchemeUrl(targetUrlRaw) {
+async function startRecordingFromSchemeUrl(targetUrlRaw, sessionExportRaw) {
   let u = (targetUrlRaw || '').trim();
   if (!u) throw new Error('Empty URL.');
   if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
@@ -722,7 +906,13 @@ async function startRecordingFromSchemeUrl(targetUrlRaw) {
   }
   const tab = await chrome.tabs.create({ url: u, active: true });
   await waitForTabLoadComplete(tab.id);
-  await startRecording(tab.id, false);
+  /** @type {{ sessionExport?: unknown, schemeAutoStop: boolean }} */
+  const opts = { schemeAutoStop: true };
+  if (sessionExportRaw && typeof sessionExportRaw === 'object') {
+    opts.sessionExport = sessionExportRaw;
+  }
+  // 与 Popup「Refresh & Record」一致：附加 debugger 后整页刷新，完整采集本轮文档与后续 API 加载。
+  await startRecording(tab.id, true, opts);
 }
 
 async function stopAndExport() {
@@ -734,14 +924,52 @@ async function stopAndExport() {
   }
 
   recorderState = 'packing';
+  const recordingEndedAt = Date.now();
 
-  // Load settings
+  try {
+  // Load settings (popup defaults), then apply one-shot session override from launcher/scheme
   const settings = await new Promise((resolve) => {
     chrome.storage.local.get('webtapeSettings', (result) => {
       resolve(result.webtapeSettings || { exportMode: 'download', webhookUrl: 'http://localhost:5643/webhook' });
     });
   });
-  const exportMode = settings.exportMode || 'download';
+  let exportMode = settings.exportMode || 'download';
+  let webhookUrlStr = String(settings.webhookUrl || '').trim();
+  if (sessionExportOverride) {
+    if (
+      sessionExportOverride.exportMode === 'download' ||
+      sessionExportOverride.exportMode === 'webhook'
+    ) {
+      exportMode = sessionExportOverride.exportMode;
+    }
+    const ow = String(sessionExportOverride.webhookUrl || '').trim();
+    if (ow) webhookUrlStr = ow;
+  }
+
+  // 仍在进行中的 HTTP：在 detach 前尽量拉取响应体并纳入导出，避免 idle/max 停表时漏请求
+  if (activeTabId !== null) {
+    for (const [cdpId, entry] of [...pendingRequests.entries()]) {
+      if (entry.entryType !== 'http') continue;
+      try {
+        const bodyResult = await cdpSend('Network.getResponseBody', { requestId: cdpId });
+        if (bodyResult) {
+          entry.responseBody = bodyResult.base64Encoded
+            ? `(base64) ${bodyResult.body}`
+            : bodyResult.body;
+        }
+      } catch (_e) {
+        /* body 可能尚未就绪或不可读 */
+      }
+      if (entry.endTime == null) entry.endTime = Date.now() / 1000;
+      if (entry.endWallMs == null) entry.endWallMs = Date.now();
+      if (entry.startWallMs == null) {
+        entry.startWallMs = Math.round(wallMsFromNetworkMonotonic(entry.startTime));
+      }
+      pendingRequests.delete(cdpId);
+      completedRequests.set(cdpId, entry);
+      console.log('[WebTape] Finalised in-flight HTTP:', entry.method, entry.url);
+    }
+  }
 
   // Detach debugger
   if (activeTabId !== null) {
@@ -765,6 +993,10 @@ async function stopAndExport() {
     for (const [cdpId, entry] of sourceMap) {
       if (filterFn && !filterFn(entry)) continue;
       entry.endTime = Date.now() / 1000;
+      entry.endWallMs = Date.now();
+      if (entry.startWallMs == null) {
+        entry.startWallMs = Math.round(wallMsFromNetworkMonotonic(entry.startTime));
+      }
       sourceMap.delete(cdpId);
       completedRequests.set(cdpId, entry);
       console.log(`[WebTape] Finalised open ${entry.entryType}:`, entry.url);
@@ -786,7 +1018,10 @@ async function stopAndExport() {
     }
   }
 
-  // Level 1: index.json (skeleton only)
+  const recordingStartedAt =
+    recordingStartTime > 0 ? recordingStartTime : (timeline[0] ? timeline[0].timestamp : recordingEndedAt);
+
+  // Level 1: index.json (skeleton only) — timeline entries
   const indexData = timeline.map((block) => {
     const entry = {
       context_id: block.context_id,
@@ -823,7 +1058,7 @@ async function stopAndExport() {
   }
 
   for (const entry of allRequests) {
-    const reqWallMs = Math.round(entry.startTime * 1000);
+    const reqWallMs = entryStartWallMs(entry);
     const reqPayload = {
       req_id: entry.reqId,
       timestamp_cst: formatTimestampCST(reqWallMs),
@@ -835,9 +1070,11 @@ async function stopAndExport() {
     };
     requestsData[`${entry.reqId}.json`] = reqPayload;
 
-    const resWallMs = entry.endTime != null
-      ? Math.round(entry.endTime * 1000)
-      : reqWallMs;
+    const resWallMs = entry.endWallMs != null
+      ? entry.endWallMs
+      : entry.endTime != null
+        ? Math.round(wallMsFromNetworkMonotonic(entry.endTime))
+        : reqWallMs;
 
     // Build response payload based on entry type
     const resPayload = {
@@ -871,8 +1108,7 @@ async function stopAndExport() {
     } catch (_e) { /* ignore */ }
 
     if (exportMode === 'webhook') {
-      // Webhook: send full data as JSON POST
-      const webhookUrlStr = (settings.webhookUrl || '').trim();
+      // Webhook: send full data as JSON POST (URL = storage + optional session override)
       if (!webhookUrlStr) {
         throw new Error('Webhook URL is not configured.');
       }
@@ -889,13 +1125,18 @@ async function stopAndExport() {
       }
 
       const now = Date.now();
+      const manifestVersion = chrome.runtime.getManifest().version;
       const payload = {
         meta: {
           timestamp: formatTimestampCST(now),
           epoch: now,
-          version: chrome.runtime.getManifest().version,
+          version: manifestVersion,
           source: 'WebTape',
           hostname: siteHostname || undefined,
+          recording_started_at_cst: formatTimestampCST(recordingStartedAt),
+          recording_started_at_epoch_ms: recordingStartedAt,
+          recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
+          recording_ended_at_epoch_ms: recordingEndedAt,
         },
         content: {
           'index.json': indexData,
@@ -929,15 +1170,29 @@ async function stopAndExport() {
       const zip = new JSZip();
 
       const nowMs = Date.now();
+      const manifestVersion = chrome.runtime.getManifest().version;
       zip.file('meta.json', JSON.stringify({
         timestamp: formatTimestampCST(nowMs),
         epoch: nowMs,
-        version: chrome.runtime.getManifest().version,
+        version: manifestVersion,
         source: 'WebTape',
         hostname: siteHostname || undefined,
+        recording_started_at_cst: formatTimestampCST(recordingStartedAt),
+        recording_started_at_epoch_ms: recordingStartedAt,
+        recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
+        recording_ended_at_epoch_ms: recordingEndedAt,
       }, null, 2));
 
-      zip.file('index.json', JSON.stringify(indexData, null, 2));
+      zip.file('index.json', JSON.stringify({
+        meta: {
+          version: manifestVersion,
+          recording_started_at_cst: formatTimestampCST(recordingStartedAt),
+          recording_started_at_epoch_ms: recordingStartedAt,
+          recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
+          recording_ended_at_epoch_ms: recordingEndedAt,
+        },
+        timeline: indexData,
+      }, null, 2));
 
       const snapshotFolder = zip.folder('snapshots');
       for (const [contextId, snapshotText] of Object.entries(snapshotsData)) {
@@ -994,6 +1249,11 @@ async function stopAndExport() {
   recorderState = 'idle';
   console.log('[WebTape] Export complete, session reset.');
   return { exportMode };
+  } finally {
+    sessionExportOverride = null;
+    clearSchemeAutoStopTimersOnly();
+    schemeAutoStopEnabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,6 +1312,8 @@ chrome.debugger.onDetach.addListener((source) => {
     console.warn('[WebTape] Debugger detached unexpectedly; ending session.');
     recorderState = 'idle';
     activeTabId = null;
+    clearSchemeAutoStopTimersOnly();
+    schemeAutoStopEnabled = false;
   }
 });
 
@@ -1104,7 +1366,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (type === 'SCHEME_START_RECORDING') {
-    startRecordingFromSchemeUrl(message.url)
+    startRecordingFromSchemeUrl(message.url, message.sessionExport)
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ error: e.message }));
     return true;

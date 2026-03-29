@@ -8,6 +8,12 @@ export interface WebTapePayload {
     version: string;
     source: string;
     hostname?: string;
+    /** 插件开始录制（INITIAL 块就绪）的 wall time */
+    recording_started_at_cst?: string;
+    recording_started_at_epoch_ms?: number;
+    /** 插件结束录制（进入导出）的 wall time */
+    recording_ended_at_cst?: string;
+    recording_ended_at_epoch_ms?: number;
   };
   content: {
     'index.json': ContextBlock[];
@@ -34,6 +40,10 @@ export type SavedContextBlock = Omit<ContextBlock, 'timestamp'> & {
 export interface SavedIndexFile {
   meta: {
     version: string;
+    recording_started_at_cst?: string;
+    recording_started_at_epoch_ms?: number;
+    recording_ended_at_cst?: string;
+    recording_ended_at_epoch_ms?: number;
   };
   timeline: SavedContextBlock[];
 }
