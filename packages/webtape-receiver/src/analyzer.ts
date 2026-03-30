@@ -143,7 +143,7 @@ async function runClaude(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const instruction = buildInstruction(sessionName);
-    const args = ["-p", "--dangerously-skip-permissions", instruction];
+    const args = ["-p", instruction];
 
     const child = execFile(
       "claude",

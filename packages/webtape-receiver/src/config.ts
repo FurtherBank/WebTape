@@ -147,7 +147,7 @@ const CONFIG_STEPS = [
     title: '请选择 AI 分析后端 / Select AI analysis backend',
     options: [
       { label: 'cursor', value: 'cursor' as AnalyzerBackend, hint: 'Cursor Agent  (cursor agent …)' },
-      { label: 'claude', value: 'claude' as AnalyzerBackend, hint: 'Claude Code   (claude -p --dangerously-skip-permissions …)' },
+      { label: 'claude', value: 'claude' as AnalyzerBackend, hint: 'Claude Code   (claude -p …)' },
       { label: '不分析', value: 'none'  as AnalyzerBackend, hint: '仅接收并保存录制数据，不自动运行 AI 分析' },
     ],
   },
