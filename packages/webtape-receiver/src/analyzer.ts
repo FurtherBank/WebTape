@@ -69,8 +69,8 @@ export async function analyzeRecording(
 }
 
 /**
- * Run analysis via `cursor agent` CLI.
- * cwd is the workspace root so cursor reads AGENTS.md.
+ * Run analysis via `agent` CLI (Cursor).
+ * cwd is the workspace root so the agent reads AGENTS.md.
  */
 async function runCursor(
   workspaceRoot: string,
@@ -80,14 +80,14 @@ async function runCursor(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const instruction = buildInstruction(sessionName);
-    const args = ["agent", instruction, "--print", "--trust", "--yolo"];
+    const args = [instruction, "--print", "--trust", "--yolo"];
 
     if (model) {
       args.push("--model", model);
     }
 
     const child = execFile(
-      "cursor",
+      "agent",
       args,
       {
         cwd: workspaceRoot,
@@ -97,9 +97,9 @@ async function runCursor(
       (error, _stdout, stderr) => {
         if (error) {
           if (stderr) {
-            console.error("[analyzer] cursor stderr:", stderr);
+            console.error("[analyzer] agent stderr:", stderr);
           }
-          reject(new Error(`cursor agent failed: ${error.message}`));
+          reject(new Error(`agent failed: ${error.message}`));
           return;
         }
         resolve();
@@ -124,8 +124,8 @@ async function runCursor(
     child.on("error", (err) => {
       reject(
         new Error(
-          `Failed to launch cursor agent: ${err.message}. ` +
-            "Ensure Cursor is installed and the `cursor` CLI is on your PATH.",
+          `Failed to launch agent: ${err.message}. ` +
+            "Ensure the Cursor `agent` CLI is on your PATH.",
         ),
       );
     });
