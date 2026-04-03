@@ -14,7 +14,7 @@
     "build": "tsc && node scripts/pack-workspace.js",
     "dev": "tsx src/index.ts",
     "ws": "ln -snf ~/Desktop/WebTape WebTape && echo '✅ ~/Desktop/WebTape → WebTape'",
-    "start": "npm run build && npm link && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape 已完成编译并链接，现在你可以直接在终端输入 \\x1b[36mwebtape\\x1b[0m 进行本地测试。'",
+    "start": "npm run build && npm link && webtape install --no-open && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape 已完成编译、链接并注册 Native Messaging Host，插件侧改动后可直接触发录制验证。'",
     "prepublishOnly": "npm run build"
   },
   "repository": {
