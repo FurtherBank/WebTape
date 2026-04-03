@@ -13,9 +13,6 @@ const messageEl = document.getElementById('message');
 const settingsToggle = document.getElementById('settingsToggle');
 const settingsBody = document.getElementById('settingsBody');
 const settingsArrow = document.getElementById('settingsArrow');
-const exportMode = document.getElementById('exportMode');
-const webhookRow = document.getElementById('webhookRow');
-const webhookUrl = document.getElementById('webhookUrl');
 const btnCopyLauncherUrl = document.getElementById('btnCopyLauncherUrl');
 
 let statsInterval = null;
@@ -111,7 +108,7 @@ btnRefreshRecord.addEventListener('click', async () => {
 btnStop.addEventListener('click', async () => {
   setMessage('');
   stopStatsPolling();
-  setStatus('packing', 'Packing…');
+  setStatus('packing', 'Analyzing…');
   btnStop.disabled = true;
 
   chrome.runtime.sendMessage({ type: 'STOP_EXPORT' }, (resp) => {
@@ -130,11 +127,7 @@ btnStop.addEventListener('click', async () => {
     setStatus('idle', 'Idle');
     setRecordingUI(false);
     refreshStats();
-    if (resp.exportMode === 'webhook') {
-      setMessage('Export complete! Data sent via webhook.', 'success');
-    } else {
-      setMessage('Export complete! ZIP downloaded.', 'success');
-    }
+    setMessage('录制完成！AI 分析已在后台启动。', 'success');
   });
 });
 
@@ -146,7 +139,7 @@ chrome.runtime.sendMessage({ type: 'GET_STATE' }, (resp) => {
     setRecordingUI(true);
     startStatsPolling();
   } else if (resp.state === 'packing') {
-    setStatus('packing', 'Packing…');
+    setStatus('packing', 'Analyzing…');
     btnStop.disabled = true;
     btnDirectRecord.disabled = true;
     btnRefreshRecord.disabled = true;
@@ -209,31 +202,10 @@ btnSnapshot.addEventListener('click', async () => {
 // Settings
 // ---------------------------------------------------------------------------
 
-function updateWebhookRowVisibility() {
-  webhookRow.style.display = exportMode.value === 'webhook' ? '' : 'none';
-}
-
-function saveSettings() {
-  const settings = {
-    exportMode: exportMode.value,
-    webhookUrl: webhookUrl.value.trim(),
-  };
-  chrome.storage.local.set({ webtapeSettings: settings });
-}
-
 settingsToggle.addEventListener('click', () => {
   const isHidden = settingsBody.style.display === 'none';
   settingsBody.style.display = isHidden ? '' : 'none';
   settingsArrow.classList.toggle('open', isHidden);
-});
-
-exportMode.addEventListener('change', () => {
-  updateWebhookRowVisibility();
-  saveSettings();
-});
-
-webhookUrl.addEventListener('input', () => {
-  saveSettings();
 });
 
 if (btnCopyLauncherUrl) {
@@ -249,14 +221,3 @@ if (btnCopyLauncherUrl) {
     }
   });
 }
-
-// Load persisted settings (and persist resolved defaults so background.js reads
-// consistent values even if the user never interacts with the settings panel).
-chrome.storage.local.get('webtapeSettings', (result) => {
-  const s = result.webtapeSettings || {};
-  exportMode.value = s.exportMode || 'download';
-  webhookUrl.value = s.webhookUrl || 'http://localhost:5643/webhook';
-  updateWebhookRowVisibility();
-  // Always persist so that background.js has the resolved values in storage
-  saveSettings();
-});

@@ -9,14 +9,35 @@ import { createWebhookServer } from './server.js';
 import { listRecordings, listUnanalyzedRecordings, parseSessionName, formatTime } from './storage.js';
 import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
 import { loadConfig, promptAiBackend, runConfigWizard } from './config.js';
+import { runInstall } from './install.js';
+import { runNativeHost, runDetachedAnalysis } from './native-host.js';
 
-const VERSION = '1.6.1';
+const VERSION = '1.7.0';
+
+// ─── Native Messaging host mode ──────────────────────────────────────────────
+// When Chrome spawns us as a Native Messaging host, stdin is not a TTY and
+// the first argument is not a sub-command name. Detect this early and run the
+// host protocol handler.
+
+// Handle detached analysis subprocess: webtape --analyze <dir> --backend <b>
+if (process.argv.includes('--analyze')) {
+  const sessionIdx = process.argv.indexOf('--analyze') + 1;
+  const backendIdx = process.argv.indexOf('--backend') + 1;
+  const modelIdx = process.argv.indexOf('--model') + 1;
+  const sessionDir = process.argv[sessionIdx];
+  const backend = backendIdx > 0 ? process.argv[backendIdx] : 'cursor';
+  const model = modelIdx > 0 ? process.argv[modelIdx] : undefined;
+  runDetachedAnalysis(sessionDir, backend, model).catch(() => process.exit(1));
+} else if (!process.stdin.isTTY && process.argv.length <= 2) {
+  // No sub-command and stdin is not a TTY → Native Messaging host mode
+  runNativeHost().catch(() => process.exit(1));
+} else {
 
 const program = new Command();
 
 program
-  .name('webtape-receiver')
-  .description('接收 WebTape 插件的 webhook 数据，保存录制内容并通过 AI 分析业务接口链路')
+  .name('webtape')
+  .description('WebTape CLI — 运行 webtape install 完成一次性初始化，之后插件可自动调用')
   .version(VERSION);
 
 /**
@@ -309,4 +330,20 @@ configCmd
     console.log('');
   });
 
+// ─── install ─────────────────────────────────────────────────────────────────
+
+program
+  .command('install')
+  .description('注册 Native Messaging Host 并打开插件安装页')
+  .option('--extension-id <id>', '手动指定插件 ID（默认自动检测）')
+  .option('--no-open', '不自动打开浏览器')
+  .action(async (opts) => {
+    await runInstall({
+      extensionId: opts.extensionId,
+      openStore: opts.open !== false,
+    });
+  });
+
 program.parse();
+
+} // end of else block for non-native-messaging mode

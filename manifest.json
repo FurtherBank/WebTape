@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
   "name": "WebTape - Web Action Recorder",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "Records user interactions and network requests on web pages, exports as structured ZIP for LLM analysis.",
   "permissions": [
     "debugger",
     "tabs",
-    "downloads",
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -39,10 +39,5 @@
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["lib/jszip.min.js"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "web_accessible_resources": []
 }
