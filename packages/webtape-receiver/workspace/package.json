@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "WebTape 录制工作区，由 webtape-receiver CLI 维护",
+  "scripts": {
+    "qt:res": "node scripts/quicktype-res.mjs"
+  },
   "dependencies": {
     "@cpu-utils/headless": "latest"
+  },
+  "devDependencies": {
+    "quicktype": "^23.0.75"
   }
 }

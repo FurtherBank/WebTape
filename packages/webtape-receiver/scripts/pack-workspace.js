@@ -25,7 +25,14 @@ async function packWorkspace() {
   }
 
   const zip = new AdmZip();
-  zip.addLocalFolder(workspaceDir);
+  // 👁️ 模板 zip 不含 node_modules；用户解压后由 ensureWorkspace + npm install 安装 quicktype 等依赖
+  zip.addLocalFolder(workspaceDir, '', (zipRelative) => {
+    const parts = zipRelative.split(/[/\\]/);
+    const base = parts[parts.length - 1] ?? '';
+    if (parts.includes('node_modules')) return false;
+    if (base === 'package-lock.json') return false;
+    return true;
+  });
   
   // Add overwrite_list.json separately so it's in the zip root but not in the extracted workspace folder
   const overwriteListPath = join(rootDir, 'src', 'overwrite_list.json');

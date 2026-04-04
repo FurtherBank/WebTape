@@ -78,6 +78,20 @@ export async function getZhiHuCollection({ userId }) {
   - 各步骤流转数据（字段名 + 实际值，尤其是用于下一步请求的字段）
   - 流程分支执行情况（若业务逻辑存在条件分支，需说明走了哪条分支及原因）
   - 流程最终结果输出（关键响应字段 + 值）
+- **大响应与 quicktype**：当 `_context.md` 或原始 `responses/res_${id}.json` 中响应体过大、被截断、或难以人工阅读时，可在**工作区根目录**用 quicktype 从该响应文件生成 TypeScript 类型，便于在 `index.js` 中按字段做**结构化摘要**（避免 `console.log` 整包打印巨大对象）。
+  - **何时用**：列表/详情接口返回体极大、嵌套深、需在脚本里只展示「关键路径 + 数组长度 + 采样项」时。
+  - **产出路径**：`recordings/<记录名>/responses/res_<id>.d.ts`（与对应的 `res_<id>.json` 同目录）。
+  - **可执行命令**（将 `<记录目录>` 替换为相对工作区根的会话路径，`<id>` 为 `0093` 或 `req_0093` 均可）：
+    ```bash
+    cd /path/to/webtape-workspace
+    npm install
+    npm run qt:res -- <记录目录> <id>
+    ```
+    示例（会话目录相对工作区根为 `recordings/console.cloud.tencent.com/0329-214049`、响应 id 为 `0093`）：
+    ```bash
+    npm run qt:res -- recordings/console.cloud.tencent.com/0329-214049 0093
+    ```
+  - **编写 index.js**：打开生成的 `.d.ts`，对**顶层字段**、**数组**用 `.length`、对**关键嵌套路径**（如 `data.items[0].id`）做 `console.log`；不要对完整 response body 做一次性深打印。
 - **非 GET 请求须用户确认**：对于会产生实际副作用的非 GET 请求（POST/PUT/PATCH/DELETE 等写操作），在发送前必须调用内联的 `confirmAction` 工具函数，要求用户按回车确认后再发送；用户拒绝则跳过该步骤并打印提示
 - **依赖管理**：若脚本需要额外 npm 依赖才能运行（如 `readline`、`chalk` 等），在文件顶部注释中列出安装命令（`// npm install xxx`），以便用户在运行前安装
 

@@ -1,5 +1,6 @@
 [
   "package.json",
   "AGENTS.md",
-  "scripts/*.js"
+  "scripts/*.js",
+  "scripts/*.mjs"
 ]
