@@ -8,44 +8,6 @@
     else console.error(msg);
   }
 
-  /** @param {URLSearchParams} sp */
-  function parseExportFromParams(sp) {
-    const modeRaw = (sp.get('export') || sp.get('exportMode') || '').trim().toLowerCase();
-    const webhook = (sp.get('webhook') || sp.get('webhookUrl') || '').trim();
-    if (!modeRaw && !webhook) return null;
-    let exportMode = modeRaw;
-    if (exportMode === 'zip') exportMode = 'download';
-    if (!exportMode && webhook) exportMode = 'webhook';
-    if (exportMode !== 'download' && exportMode !== 'webhook') return null;
-    /** @type {{ exportMode: string, webhookUrl?: string }} */
-    const o = { exportMode };
-    if (webhook) o.webhookUrl = webhook;
-    return o;
-  }
-
-  /** @param {string | null | undefined} raw */
-  function tryParseExportFromUrlString(raw) {
-    const t = (raw || '').trim();
-    if (!t) return null;
-    try {
-      const u = new URL(t);
-      return parseExportFromParams(u.searchParams);
-    } catch {
-      return null;
-    }
-  }
-
-  /** @param {{ exportMode?: string, webhookUrl?: string } | null} a @param {{ exportMode?: string, webhookUrl?: string } | null} b */
-  function mergeExport(a, b) {
-    if (!a) return b;
-    if (!b) return a;
-    const wh = (b.webhookUrl || a.webhookUrl || '').trim();
-    /** @type {{ exportMode: string, webhookUrl?: string }} */
-    const o = { exportMode: /** @type {string} */ (b.exportMode || a.exportMode) };
-    if (wh) o.webhookUrl = wh;
-    return o;
-  }
-
   /** @param {string} raw */
   function resolveTargetUrl(raw) {
     const trimmed = (raw || '').trim();
@@ -72,17 +34,6 @@
   const nav = params.get('nav');
   const direct = params.get('url') || params.get('target');
 
-  let sessionExport = parseExportFromParams(params);
-  sessionExport = mergeExport(sessionExport, tryParseExportFromUrlString(direct || ''));
-  if (nav) {
-    try {
-      const decoded = decodeURIComponent(nav);
-      sessionExport = mergeExport(sessionExport, tryParseExportFromUrlString(decoded));
-    } catch {
-      sessionExport = mergeExport(sessionExport, tryParseExportFromUrlString(nav));
-    }
-  }
-
   let target = resolveTargetUrl(direct || '');
   if (!target && nav) {
     try {
@@ -98,9 +49,8 @@
     return;
   }
 
-  /** @type {{ type: string, url: string, sessionExport?: Record<string, string> }} */
+  /** @type {{ type: string, url: string }} */
   const msg = { type: 'SCHEME_START_RECORDING', url: target };
-  if (sessionExport) msg.sessionExport = sessionExport;
 
   chrome.runtime.sendMessage(msg, (resp) => {
     if (chrome.runtime.lastError) {

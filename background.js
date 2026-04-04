@@ -1,7 +1,6 @@
 'use strict';
 
 importScripts('rules.js');
-importScripts('lib/jszip.min.js');
 
 /**
  * Asia/Shanghai wall time (+08:00, fixed offset) with ms — no Intl fractionalSecondDigits
@@ -30,9 +29,8 @@ let recorderState = 'idle';
 let activeTabId = null;
 
 /**
- * Export options for the current recording only (e.g. from record-launcher / scheme).
- * Cleared when a new recording starts without override, and after Stop & Export.
- * @type {{ exportMode: 'download' | 'webhook', webhookUrl?: string } | null}
+ * Reserved for future per-session export overrides (currently unused).
+ * @type {null}
  */
 let sessionExportOverride = null;
 
@@ -153,24 +151,6 @@ function wallMsFromNetworkMonotonic(monotonicSec) {
     networkWallOriginMs = Date.now();
   }
   return networkWallOriginMs + (monotonicSec - networkMonotonicOrigin) * 1000;
-}
-
-/**
- * @param {unknown} raw
- * @returns {{ exportMode: 'download' | 'webhook', webhookUrl?: string } | null}
- */
-function normalizeSessionExportPayload(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const o = /** @type {Record<string, unknown>} */ (raw);
-  let mode = String(o.exportMode || o.export || '').trim().toLowerCase();
-  const wh = String(o.webhookUrl || o.webhook || '').trim();
-  if (mode === 'zip') mode = 'download';
-  if (!mode && wh) mode = 'webhook';
-  if (mode !== 'download' && mode !== 'webhook') return null;
-  /** @type {{ exportMode: 'download' | 'webhook', webhookUrl?: string }} */
-  const out = { exportMode: mode };
-  if (wh) out.webhookUrl = wh;
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -783,9 +763,6 @@ async function startRecording(tabId, refreshFirst, opts) {
   clearSchemeAutoStopTimersOnly();
   schemeAutoStopEnabled = false;
   sessionExportOverride = null;
-  if (opts && opts.sessionExport && typeof opts.sessionExport === 'object') {
-    sessionExportOverride = normalizeSessionExportPayload(opts.sessionExport);
-  }
   activeTabId = tabId;
   recorderState = 'recording';
 
@@ -889,9 +866,8 @@ function waitForTabLoadComplete(tabId) {
 /**
  * Open a tab at URL (http/https) and start recording after load completes.
  * @param {string} targetUrlRaw
- * @param {unknown} [sessionExportRaw] Optional export options from scheme (merged at export time).
  */
-async function startRecordingFromSchemeUrl(targetUrlRaw, sessionExportRaw) {
+async function startRecordingFromSchemeUrl(targetUrlRaw) {
   let u = (targetUrlRaw || '').trim();
   if (!u) throw new Error('Empty URL.');
   if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
@@ -906,13 +882,56 @@ async function startRecordingFromSchemeUrl(targetUrlRaw, sessionExportRaw) {
   }
   const tab = await chrome.tabs.create({ url: u, active: true });
   await waitForTabLoadComplete(tab.id);
-  /** @type {{ sessionExport?: unknown, schemeAutoStop: boolean }} */
-  const opts = { schemeAutoStop: true };
-  if (sessionExportRaw && typeof sessionExportRaw === 'object') {
-    opts.sessionExport = sessionExportRaw;
-  }
   // 与 Popup「Refresh & Record」一致：附加 debugger 后整页刷新，完整采集本轮文档与后续 API 加载。
-  await startRecording(tab.id, true, opts);
+  await startRecording(tab.id, true, { schemeAutoStop: true });
+}
+
+const NATIVE_HOST_NAME = 'com.webtape.receiver';
+
+/**
+ * Send the recording payload to the native host via Native Messaging.
+ * Returns a promise that resolves with the host's response message.
+ */
+function sendToNativeHost(payload) {
+  return new Promise((resolve, reject) => {
+    let port;
+    try {
+      port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    } catch (err) {
+      reject(new Error(
+        'Native Messaging 连接失败：' + (err.message || err) +
+        '。请确认已运行 webtape install 完成初始化。'
+      ));
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      port.disconnect();
+      reject(new Error('Native Messaging 超时（10s）。请检查 webtape 是否正常安装。'));
+    }, 10000);
+
+    port.onMessage.addListener((msg) => {
+      clearTimeout(timeout);
+      port.disconnect();
+      if (msg && msg.type === 'error') {
+        reject(new Error('webtape 处理出错：' + msg.error));
+      } else {
+        resolve(msg);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timeout);
+      if (chrome.runtime.lastError) {
+        reject(new Error(
+          'Native Messaging 断开：' + chrome.runtime.lastError.message +
+          '。请确认已运行 webtape install 完成初始化。'
+        ));
+      }
+    });
+
+    port.postMessage({ type: 'recording', payload });
+  });
 }
 
 async function stopAndExport() {
@@ -927,25 +946,6 @@ async function stopAndExport() {
   const recordingEndedAt = Date.now();
 
   try {
-  // Load settings (popup defaults), then apply one-shot session override from launcher/scheme
-  const settings = await new Promise((resolve) => {
-    chrome.storage.local.get('webtapeSettings', (result) => {
-      resolve(result.webtapeSettings || { exportMode: 'download', webhookUrl: 'http://localhost:5643/webhook' });
-    });
-  });
-  let exportMode = settings.exportMode || 'download';
-  let webhookUrlStr = String(settings.webhookUrl || '').trim();
-  if (sessionExportOverride) {
-    if (
-      sessionExportOverride.exportMode === 'download' ||
-      sessionExportOverride.exportMode === 'webhook'
-    ) {
-      exportMode = sessionExportOverride.exportMode;
-    }
-    const ow = String(sessionExportOverride.webhookUrl || '').trim();
-    if (ow) webhookUrlStr = ow;
-  }
-
   // 仍在进行中的 HTTP：在 detach 前尽量拉取响应体并纳入导出，避免 idle/max 停表时漏请求
   if (activeTabId !== null) {
     for (const [cdpId, entry] of [...pendingRequests.entries()]) {
@@ -1097,158 +1097,51 @@ async function stopAndExport() {
     responsesData[responseBasenameFromReqId(entry.reqId)] = resPayload;
   }
 
+  // Build the payload to send via Native Messaging
+  let siteHostname = '';
   try {
-    // Extract hostname from the first timeline entry's URL (shared by both export modes)
-    let siteHostname = '';
-    try {
-      const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
-      if (siteUrl) {
-        siteHostname = new URL(siteUrl).hostname;
-      }
-    } catch (_e) { /* ignore */ }
-
-    if (exportMode === 'webhook') {
-      // Webhook: send full data as JSON POST (URL = storage + optional session override)
-      if (!webhookUrlStr) {
-        throw new Error('Webhook URL is not configured.');
-      }
-
-      // Validate URL format
-      let parsedUrl;
-      try {
-        parsedUrl = new URL(webhookUrlStr);
-      } catch (_e) {
-        throw new Error('Webhook URL is not a valid URL: ' + webhookUrlStr);
-      }
-      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-        throw new Error('Webhook URL must use http or https protocol.');
-      }
-
-      const now = Date.now();
-      const manifestVersion = chrome.runtime.getManifest().version;
-      const payload = {
-        meta: {
-          timestamp: formatTimestampCST(now),
-          epoch: now,
-          version: manifestVersion,
-          source: 'WebTape',
-          hostname: siteHostname || undefined,
-          recording_started_at_cst: formatTimestampCST(recordingStartedAt),
-          recording_started_at_epoch_ms: recordingStartedAt,
-          recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
-          recording_ended_at_epoch_ms: recordingEndedAt,
-        },
-        content: {
-          'index.json': indexData,
-          snapshots: snapshotsData,
-          requests: requestsData,
-          responses: responsesData,
-        },
-      };
-
-      console.log('[WebTape] Sending webhook to:', webhookUrlStr);
-      let resp;
-      try {
-        resp = await fetch(webhookUrlStr, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } catch (fetchErr) {
-        throw new Error(
-          'Failed to connect to webhook at ' + webhookUrlStr + ': ' + fetchErr.message +
-          '. Check that the URL is correct and the server is running.'
-        );
-      }
-
-      if (!resp.ok) {
-        throw new Error('Webhook request failed: ' + resp.status + ' ' + resp.statusText);
-      }
-      console.log('[WebTape] Webhook sent successfully, status:', resp.status);
-    } else {
-      // Download: build ZIP and trigger download
-      const zip = new JSZip();
-
-      const nowMs = Date.now();
-      const manifestVersion = chrome.runtime.getManifest().version;
-      zip.file('meta.json', JSON.stringify({
-        timestamp: formatTimestampCST(nowMs),
-        epoch: nowMs,
-        version: manifestVersion,
-        source: 'WebTape',
-        hostname: siteHostname || undefined,
-        recording_started_at_cst: formatTimestampCST(recordingStartedAt),
-        recording_started_at_epoch_ms: recordingStartedAt,
-        recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
-        recording_ended_at_epoch_ms: recordingEndedAt,
-      }, null, 2));
-
-      zip.file('index.json', JSON.stringify({
-        meta: {
-          version: manifestVersion,
-          recording_started_at_cst: formatTimestampCST(recordingStartedAt),
-          recording_started_at_epoch_ms: recordingStartedAt,
-          recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
-          recording_ended_at_epoch_ms: recordingEndedAt,
-        },
-        timeline: indexData,
-      }, null, 2));
-
-      const snapshotFolder = zip.folder('snapshots');
-      for (const [contextId, snapshotText] of Object.entries(snapshotsData)) {
-        snapshotFolder.file(`snapshot_${contextId}.md`, snapshotText);
-      }
-
-      const reqFolder = zip.folder('requests');
-      const resFolder = zip.folder('responses');
-
-      for (const [filename, data] of Object.entries(requestsData)) {
-        reqFolder.file(filename, JSON.stringify(data, null, 2));
-      }
-      for (const [filename, data] of Object.entries(responsesData)) {
-        resFolder.file(filename, JSON.stringify(data, null, 2));
-      }
-
-      console.log('[WebTape] Generating ZIP archive…');
-      const base64 = await zip.generateAsync({ type: 'base64', compression: 'DEFLATE' });
-      console.log('[WebTape] ZIP generated, base64 length:', base64.length);
-
-      const dataUrl = 'data:application/zip;base64,' + base64;
-
-      const domain = siteHostname || 'unknown';
-
-      const pad = (n, len = 2) => String(n).padStart(len, '0');
-      const dl = new Date(nowMs);
-      const datePart = `${pad(dl.getMonth() + 1)}${pad(dl.getDate())}`;
-      const timePart = `${pad(dl.getHours())}${pad(dl.getMinutes())}${pad(dl.getSeconds())}`;
-      const filename = `${domain}-${datePart}-${timePart}.zip`;
-
-      console.log('[WebTape] Starting download:', filename);
-
-      await new Promise((resolve, reject) => {
-        chrome.downloads.download({ url: dataUrl, filename, saveAs: false }, (downloadId) => {
-          if (chrome.runtime.lastError) {
-            console.error('[WebTape] Download failed:', chrome.runtime.lastError.message);
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            console.log('[WebTape] Download started, id:', downloadId);
-            resolve(downloadId);
-          }
-        });
-      });
+    const siteUrl = indexData && indexData.length > 0 && indexData[0].state && indexData[0].state.url;
+    if (siteUrl) {
+      siteHostname = new URL(siteUrl).hostname;
     }
-  } catch (err) {
-    resetSession();
-    activeTabId = null;
-    recorderState = 'idle';
-    throw err;
-  }
+  } catch (_e) { /* ignore */ }
+
+  const now = Date.now();
+  const manifestVersion = chrome.runtime.getManifest().version;
+  const nativePayload = {
+    meta: {
+      timestamp: formatTimestampCST(now),
+      epoch: now,
+      version: manifestVersion,
+      source: 'WebTape',
+      hostname: siteHostname || undefined,
+      recording_started_at_cst: formatTimestampCST(recordingStartedAt),
+      recording_started_at_epoch_ms: recordingStartedAt,
+      recording_ended_at_cst: formatTimestampCST(recordingEndedAt),
+      recording_ended_at_epoch_ms: recordingEndedAt,
+    },
+    content: {
+      'index.json': indexData,
+      snapshots: snapshotsData,
+      requests: requestsData,
+      responses: responsesData,
+    },
+  };
+
+  console.log('[WebTape] Sending payload via Native Messaging…');
+  await sendToNativeHost(nativePayload);
+  console.log('[WebTape] Native host acknowledged payload.');
 
   resetSession();
   activeTabId = null;
   recorderState = 'idle';
   console.log('[WebTape] Export complete, session reset.');
-  return { exportMode };
+  return { exportMode: 'native' };
+  } catch (err) {
+    resetSession();
+    activeTabId = null;
+    recorderState = 'idle';
+    throw err;
   } finally {
     sessionExportOverride = null;
     clearSchemeAutoStopTimersOnly();
@@ -1366,7 +1259,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (type === 'SCHEME_START_RECORDING') {
-    startRecordingFromSchemeUrl(message.url, message.sessionExport)
+    startRecordingFromSchemeUrl(message.url)
       .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ error: e.message }));
     return true;

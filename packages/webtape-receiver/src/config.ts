@@ -9,6 +9,7 @@ const CONFIG_PATH = join(CONFIG_DIR, 'config.json');
 
 export interface WebtapeConfig {
   aiBackend?: AnalyzerBackend;
+  aiModel?: string;
 }
 
 /**
