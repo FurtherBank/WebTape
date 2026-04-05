@@ -132,7 +132,12 @@ export function ensureWorkspace(root: string, version: string): WorkspacePaths {
   if (needsInstall) {
     console.log(chalk.cyan('  📦 正在安装工作区依赖 (npm install)...'));
     try {
-      execSync('npm install', { cwd: root, stdio: 'inherit' });
+      // Use 'pipe' so npm's stdout is never written to our own stdout.
+      // In native messaging host mode stdout is protocol-only; even one
+      // stray character breaks the stream.  In CLI mode the output is
+      // captured but not shown — acceptable since the spinner/log line above
+      // already indicates progress.
+      execSync('npm install', { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
       console.log(chalk.green('  ✅ 依赖安装完成'));
     } catch (err) {
       console.error(chalk.yellow('  ⚠️ 依赖安装失败，请手动在工作区运行 npm install'));

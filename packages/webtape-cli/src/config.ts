@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
@@ -18,7 +18,9 @@ export interface WebtapeConfig {
 export function loadConfig(): WebtapeConfig {
   if (!existsSync(CONFIG_PATH)) return {};
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+    const data = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown>;
+    const { extensionId: _legacy, ...rest } = data;
+    return rest as WebtapeConfig;
   } catch (err) {
     console.warn('Failed to parse config file, using defaults:', (err as Error).message);
     return {};
@@ -36,6 +38,28 @@ export function saveConfig(partial: Partial<WebtapeConfig>): WebtapeConfig {
   }
   writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2), 'utf-8');
   return merged;
+}
+
+/** 移除旧版写入的 extensionId；插件 ID 现由 CLI 固定，不再存配置。 */
+export function stripExtensionIdFromSavedConfig(): void {
+  if (!existsSync(CONFIG_PATH)) return;
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  if (!('extensionId' in raw)) return;
+  delete raw.extensionId;
+  const keys = Object.keys(raw);
+  if (keys.length === 0) {
+    unlinkSync(CONFIG_PATH);
+    return;
+  }
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+  writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------

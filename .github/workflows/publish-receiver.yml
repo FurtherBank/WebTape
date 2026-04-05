@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'packages/webtape-receiver/**'
+      - 'packages/webtape-cli/**'
 
 permissions:
   contents: read
@@ -25,8 +25,8 @@ jobs:
       - name: Check if receiver version changed
         id: diff
         run: |
-          CURRENT=$(node -p "require('./packages/webtape-receiver/package.json').version")
-          PREVIOUS=$(git show HEAD~1:packages/webtape-receiver/package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+          CURRENT=$(node -p "require('./packages/webtape-cli/package.json').version")
+          PREVIOUS=$(git show HEAD~1:packages/webtape-cli/package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
 
           echo "current=$CURRENT"
           echo "previous=$PREVIOUS"
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/webtape-receiver
+        working-directory: packages/webtape-cli
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

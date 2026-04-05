@@ -23,16 +23,18 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
+        working-directory: packages/webtape-recorder
         run: npm install
 
       - name: Build extension package
+        working-directory: packages/webtape-recorder
         run: npm run build
 
       - name: Rename package with version
-        run: mv dist/webtape.zip dist/webtape-${GITHUB_REF_NAME}.zip
+        run: mv packages/webtape-recorder/dist/webtape.zip packages/webtape-recorder/dist/webtape-${GITHUB_REF_NAME}.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/webtape-*.zip
+          files: packages/webtape-recorder/dist/webtape-*.zip
           generate_release_notes: true

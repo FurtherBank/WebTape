@@ -71,7 +71,7 @@ export function createWebhookServer(opts: ServerOptions) {
     if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
       json(res, 200, {
         status: 'ok',
-        service: 'webtape-receiver',
+        service: 'webtape',
         workspace: workspace.root,
       });
       return;

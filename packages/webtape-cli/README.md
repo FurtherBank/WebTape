@@ -1,6 +1,6 @@
-# 🚀 WebTape Receiver：让网页自动化像录屏一样简单
+# 🚀 WebTape CLI：让网页自动化像录屏一样简单
 
-**WebTape Receiver** 是 [WebTape](https://github.com/FurtherBank/WebTape) 生态中的核心动力引擎。  
+**WebTape CLI** 是 [WebTape](https://github.com/FurtherBank/WebTape) 生态中的核心动力引擎。  
 
 它能将你在浏览器中的操作，瞬间转化为可直接运行且**不依赖网站 Open API 和浏览器手动操作**的自动化脚本。
 
@@ -10,7 +10,7 @@
 
 ## ✨ 核心价值：录制即自动化集成
 
-通过 WebTape 插件录制你的业务操作，Receiver 会自动接收并保存所有网络请求。  
+通过 WebTape 插件录制你的业务操作，CLI 会自动接收并保存所有网络请求。  
 
 配合 AI 分析，它能直接理解你在网站上的操作，并将这些操作流程编写成**可以自动化运行的**`request.js`脚本，用于快速将网页操作以命令行、Agent 等形式自动化。
 
@@ -35,19 +35,28 @@
 只需一行命令，开启你的自动化之旅：
 
 ```bash
-npm install -g webtape-receiver
+npm install -g webtape
 ```
 
 ### 第二步：启动服务
 启动你的专属 Webhook 接收服务器：
 ```bash
-webtape-receiver serve
+webtape serve
 ```
 *首次启动，将自动创建默认工作区在你的**桌面 `WebTape` 文件夹**下。*
 
 ### 第三步：配置插件
 在 WebTape Chrome 插件中，将 Webhook 地址设置为：
 `http://localhost:5643/webhook`
+
+### Native Messaging（自动保存录制到本机）
+若使用扩展的「直连 CLI」能力，需先执行一次：
+
+```bash
+webtape install
+```
+
+CLI 会按**固定插件 ID** `jcbbpjhckcknopggkbafcjnnhddjpfhm`（与官方扩展 `manifest.json` 中 `key` 一致）注册 Native Messaging Host，**无需**再传 `--extension-id`。诊断可运行：`node scripts/check.mjs`（在 `packages/webtape-cli` 目录下）。
 
 ---
 
@@ -57,8 +66,8 @@ webtape-receiver serve
 
 | 阶段 | 操作 | 核心产出 |
 | :--- | :--- | :--- |
-| **1. 接收** | 终端运行 `webtape-receiver serve`，插件端点击导出。 | 录制数据自动进入 `recordings/` 目录。 |
-| **2. 分析** | 运行 `webtape-receiver analyze <session>`。 | AI 自动生成 `analysis_report.md` 业务文档。 |
+| **1. 接收** | 终端运行 `webtape serve`，插件端点击导出。 | 录制数据自动进入 `recordings/` 目录。 |
+| **2. 分析** | 运行 `webtape analyze <session>`。 | AI 自动生成 `analysis_report.md` 业务文档。 |
 | **3. 生成** | AI 根据 `AGENTS.md` 规则编写代码。 | 自动生成 `request.js`，包含封装好的业务函数。 |
 | **4. 集成** | 在你的项目中 `import { xxx } from './request.js'`。 | **无需逆向工程**，直接实现网页功能自动化。 |
 

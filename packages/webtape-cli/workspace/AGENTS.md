@@ -1,4 +1,4 @@
-<!-- ⚠️ 此文件由 webtape-receiver 工具自动生成和维护，请勿手动修改 -->
+<!-- ⚠️ 此文件由 webtape 工具自动生成和维护，请勿手动修改 -->
 
 # WebTape 录制分析 Agent
 

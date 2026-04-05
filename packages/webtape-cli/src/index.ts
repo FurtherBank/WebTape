@@ -9,7 +9,7 @@ import { createWebhookServer } from './server.js';
 import { listRecordings, listUnanalyzedRecordings, parseSessionName, formatTime } from './storage.js';
 import { analyzeRecording, type AnalyzerBackend, type AnalyzeResult } from './analyzer.js';
 import { loadConfig, promptAiBackend, runConfigWizard } from './config.js';
-import { runInstall } from './install.js';
+import { runInstall, WEBTAPE_EXTENSION_ID } from './install.js';
 import { runNativeHost, runDetachedAnalysis } from './native-host.js';
 
 const VERSION = '1.7.0';
@@ -28,7 +28,13 @@ if (process.argv.includes('--analyze')) {
   const backend = backendIdx > 0 ? process.argv[backendIdx] : 'cursor';
   const model = modelIdx > 0 ? process.argv[modelIdx] : undefined;
   runDetachedAnalysis(sessionDir, backend, model).catch(() => process.exit(1));
-} else if (!process.stdin.isTTY && process.argv.length <= 2) {
+} else if (
+  !process.stdin.isTTY &&
+  // argv.length === 2: spawned directly (e.g. diagnostic script)
+  // argv.length === 3 with chrome-extension:// origin: spawned by Chrome as native messaging host
+  // (Chrome always appends the calling extension's origin as the last argv)
+  (process.argv.length <= 2 || /^chrome-extension:\/\//.test(process.argv[2]))
+) {
   // No sub-command and stdin is not a TTY → Native Messaging host mode
   runNativeHost().catch(() => process.exit(1));
 } else {
@@ -51,7 +57,7 @@ function logAnalyzeResult(result: AnalyzeResult): void {
     console.log(chalk.green(`  ✅ 已将 ${formattedTime} 录制的 ${domain} 站点 api 分析记录保存到了 ${result.reportPath}${durationText}`));
   } else {
     console.log(chalk.yellow(`  ⚠️ 未检测到分析报告: ${result.reportPath}`));
-    console.log(chalk.gray('  你可以稍后使用 webtape-receiver retry 命令重新分析所有未完成的记录。'));
+    console.log(chalk.gray('  你可以稍后使用 webtape retry 命令重新分析所有未完成的记录。'));
   }
 }
 
@@ -213,7 +219,7 @@ program
       backend = config.aiBackend;
     } else {
       if (config.aiBackend === 'none') {
-        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape-receiver config 选择 AI 后端。'));
+        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape config 选择 AI 后端。'));
         process.exit(1);
       }
       backend = 'cursor';
@@ -267,7 +273,7 @@ program
       backend = config.aiBackend;
     } else {
       if (config.aiBackend === 'none') {
-        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape-receiver config 选择 AI 后端。'));
+        console.log(chalk.yellow('  ⚠️  当前配置为"不分析"，请先运行 webtape config 选择 AI 后端。'));
         process.exit(1);
       }
       backend = 'cursor';
@@ -320,11 +326,12 @@ configCmd
     console.log('');
     console.log(chalk.bold('当前配置:'));
     console.log('');
+    console.log(`  ${chalk.green('插件 ID')}   ${WEBTAPE_EXTENSION_ID} ${chalk.gray('(固定)')}`);
     if (Object.keys(config).length === 0) {
-      console.log(chalk.gray('  （尚无配置，运行 webtape-receiver config 进行设置）'));
+      console.log(chalk.gray('  （尚无其它配置，运行 webtape config 进行设置）'));
     } else {
       if (config.aiBackend) {
-        console.log(`  ${chalk.green('AI 后端')}  ${config.aiBackend}`);
+        console.log(`  ${chalk.green('AI 后端')}   ${config.aiBackend}`);
       }
     }
     console.log('');
@@ -335,11 +342,9 @@ configCmd
 program
   .command('install')
   .description('注册 Native Messaging Host 并打开插件安装页')
-  .option('--extension-id <id>', '手动指定插件 ID（默认自动检测）')
   .option('--no-open', '不自动打开浏览器')
   .action(async (opts) => {
     await runInstall({
-      extensionId: opts.extensionId,
       openStore: opts.open !== false,
     });
   });

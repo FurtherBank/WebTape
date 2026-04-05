@@ -221,3 +221,50 @@ if (btnCopyLauncherUrl) {
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// Native Host 连接检测
+// ---------------------------------------------------------------------------
+
+const btnCheckConnection = document.getElementById('btnCheckConnection');
+const checkResultEl = document.getElementById('checkResult');
+
+function renderCheckResult(result) {
+  const lines = [];
+  for (const s of result.steps) {
+    const icon = s.ok ? '✅' : '❌';
+    lines.push(`${icon} [${s.step}] ${s.msg}`);
+  }
+  if (result.ok) {
+    lines.push('');
+    lines.push('🎉 Native Host 连接正常！');
+  } else {
+    lines.push('');
+    lines.push('❌ 连接失败，请运行 CLI 诊断脚本获取详情：');
+    lines.push('cd packages/webtape-cli && node scripts/check.mjs');
+  }
+  checkResultEl.textContent = lines.join('\n');
+  checkResultEl.className = 'check-result ' + (result.ok ? 'check-ok' : 'check-fail');
+  checkResultEl.style.display = '';
+}
+
+if (btnCheckConnection) {
+  btnCheckConnection.addEventListener('click', () => {
+    btnCheckConnection.disabled = true;
+    btnCheckConnection.textContent = '⏳ 检测中…';
+    checkResultEl.style.display = 'none';
+
+    chrome.runtime.sendMessage({ type: 'PING_NATIVE_HOST' }, (resp) => {
+      btnCheckConnection.disabled = false;
+      btnCheckConnection.textContent = '🔍 检测 Native Host 连接';
+      if (chrome.runtime.lastError) {
+        renderCheckResult({
+          ok: false,
+          steps: [{ step: 'background', ok: false, msg: chrome.runtime.lastError.message }],
+        });
+        return;
+      }
+      renderCheckResult(resp || { ok: false, steps: [{ step: 'response', ok: false, msg: '无响应' }] });
+    });
+  });
+}

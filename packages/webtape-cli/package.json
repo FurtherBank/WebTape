@@ -4,8 +4,7 @@
   "description": "CLI tool for WebTape: registers the Native Messaging host so the Chrome extension can record and analyze web sessions via AI without any manual server management.",
   "type": "module",
   "bin": {
-    "webtape": "./dist/index.js",
-    "webtape-receiver": "./dist/index.js"
+    "webtape": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -14,15 +13,15 @@
     "build": "tsc && node scripts/pack-workspace.js",
     "dev": "tsx src/index.ts",
     "ws": "ln -snf ~/Desktop/WebTape WebTape && echo '✅ ~/Desktop/WebTape → WebTape'",
-    "start": "npm run build && npm link && webtape install --no-open && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape 已完成编译、链接并注册 Native Messaging Host，插件侧改动后可直接触发录制验证。'",
+    "start": "npm run build && npm link && node ./dist/index.js install --no-open && echo '\\n\\x1b[32m[Success]\\x1b[0m webtape 已完成编译、链接并注册 Native Messaging Host，插件侧改动后可直接触发录制验证。'",
     "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/FurtherBank/WebTape.git",
-    "directory": "packages/webtape-receiver"
+    "directory": "packages/webtape-cli"
   },
-  "homepage": "https://github.com/FurtherBank/WebTape/tree/main/packages/webtape-receiver",
+  "homepage": "https://github.com/FurtherBank/WebTape/tree/main/packages/webtape-cli",
   "bugs": {
     "url": "https://github.com/FurtherBank/WebTape/issues"
   },

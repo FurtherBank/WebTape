@@ -4,17 +4,13 @@
   "description": "Chrome Extension for recording web actions and network requests, exporting as structured ZIP for LLM analysis.",
   "private": true,
   "scripts": {
-    "postinstall": "cp node_modules/jszip/dist/jszip.min.js lib/jszip.min.js",
-    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css lib/ icons/",
-    "start": "npm start --prefix packages/webtape-receiver"
+    "start": "npm start --prefix packages/webtape-cli",
+    "dev": "npm run start --prefix packages/webtape-cli"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/FurtherBank/WebTape.git"
   },
   "keywords": ["chrome-extension", "recording", "automation", "llm"],
-  "license": "MIT",
-  "dependencies": {
-    "jszip": "^3.10.1"
-  }
+  "license": "MIT"
 }

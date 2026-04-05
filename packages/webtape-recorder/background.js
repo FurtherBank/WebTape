@@ -1279,5 +1279,78 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // async
   }
 
+  if (type === 'PING_NATIVE_HOST') {
+    checkNativeHost()
+      .then((result) => sendResponse(result))
+      .catch((e) => sendResponse({ ok: false, steps: [{ step: 'unexpected', ok: false, msg: e.message }] }));
+    return true; // async
+  }
+
   return false;
 });
+
+// ---------------------------------------------------------------------------
+// Native Host 连通性检测
+// ---------------------------------------------------------------------------
+
+/**
+ * 对 Native Messaging host 执行分步诊断：connect → send ping → receive pong。
+ * 每个阶段独立记录，方便定位失败点。
+ */
+async function checkNativeHost() {
+  const steps = [];
+
+  // Step 1: connect
+  let port;
+  try {
+    port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    steps.push({ step: 'connect', ok: true, msg: 'connectNative() 调用成功' });
+  } catch (e) {
+    steps.push({ step: 'connect', ok: false, msg: e.message });
+    return { ok: false, steps };
+  }
+
+  // Step 2: ping-pong（使用 settled 标志避免双重 resolve）
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const settle = (ok, stepName, msg) => {
+      if (settled) return;
+      settled = true;
+      steps.push({ step: stepName, ok, msg });
+      resolve({ ok, steps });
+    };
+
+    const timeout = setTimeout(() => {
+      try { port.disconnect(); } catch (_) {}
+      settle(false, 'pong', '超时 (5s)：未收到 pong 响应');
+    }, 5000);
+
+    port.onMessage.addListener((msg) => {
+      clearTimeout(timeout);
+      port.disconnect();
+      if (msg && msg.type === 'pong') {
+        settle(true, 'pong', `收到 pong ✓  host version: ${msg.version}`);
+      } else {
+        settle(false, 'pong', `意外响应类型: ${JSON.stringify(msg)}`);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timeout);
+      const errMsg = chrome.runtime.lastError
+        ? chrome.runtime.lastError.message
+        : '连接断开（无错误信息）';
+      settle(false, 'disconnect', errMsg);
+    });
+
+    try {
+      port.postMessage({ type: 'ping' });
+      steps.push({ step: 'send', ok: true, msg: '已发送 ping 消息' });
+    } catch (e) {
+      clearTimeout(timeout);
+      try { port.disconnect(); } catch (_) {}
+      settle(false, 'send', `postMessage 失败: ${e.message}`);
+    }
+  });
+}

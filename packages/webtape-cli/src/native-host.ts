@@ -61,11 +61,73 @@ function writeNativeMessage(obj: unknown): void {
   process.stdout.write(Buffer.concat([header, buf]));
 }
 
+/**
+ * Write a native message, then wait for Chrome to send SIGTERM before exiting.
+ *
+ * Why SIGTERM, not stdin EOF:
+ *   Chrome uses connectNative() (persistent port). After sending a message,
+ *   Chrome immediately half-closes stdin (closes the write-end of the pipe).
+ *   This fires Node.js's stdin 'end'/'close' events right after the message
+ *   is read — BEFORE Chrome has had a chance to deliver our stdout response
+ *   to the extension's onMessage handler.
+ *
+ *   Exiting on stdin 'end' therefore races with Chrome's message delivery,
+ *   causing onDisconnect("Native host has exited.") to win over onMessage.
+ *
+ * Correct lifecycle with SIGTERM:
+ *   1. Host writes response → stays alive.
+ *   2. Chrome reads response from stdout → delivers to extension onMessage.
+ *   3. Extension onMessage fires → extension calls port.disconnect().
+ *   4. Chrome sends SIGTERM to the host process.
+ *   5. Host receives SIGTERM → exits cleanly.
+ *   6. Chrome fires onDisconnect with lastError = null (extension-initiated).
+ *
+ * Why the timer must be registered synchronously (before stdout.write):
+ *   stdin reaches EOF as soon as Chrome half-closes its write-end. If we only
+ *   set up the safety timer inside the stdout.write callback (async), there is
+ *   a window where stdin EOF has already drained the event loop before the
+ *   callback fires — the process exits before SIGTERM ever arrives.
+ *   Registering the timer synchronously guarantees the event loop is held open
+ *   regardless of the stdin EOF / stdout flush ordering.
+ *
+ *   The timer is intentionally NOT unref()'d: we need it to hold the event
+ *   loop open while waiting for Chrome's SIGTERM. process.exit() in the SIGTERM
+ *   handler terminates the process immediately, clearing the timer.
+ */
+function writeNativeMessageAndExit(obj: unknown, code: number): void {
+  const json = JSON.stringify(obj);
+  const buf = Buffer.from(json, 'utf-8');
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(buf.length, 0);
+
+  const doExit = () => process.exit(code);
+
+  // Register SIGTERM and safety timer synchronously — before the async write —
+  // so the event loop stays alive even if stdin EOF fires before the callback.
+  process.once('SIGTERM', doExit);
+  // Safety: exit after 30s if SIGTERM never arrives (e.g. extension crashed).
+  // Must NOT be unref()'d: this timer is the sole event loop reference after
+  // stdin reaches EOF.
+  setTimeout(doExit, 30_000);
+
+  process.stdout.write(Buffer.concat([header, buf]));
+}
+
 function getHostScriptPath(): string {
   return fileURLToPath(import.meta.url);
 }
 
 export async function runNativeHost(): Promise<void> {
+  // stdout is exclusively reserved for the 4-byte-prefixed native messaging
+  // protocol. Any stray bytes (console.log, chalk output, npm install progress,
+  // etc.) corrupt the stream and trigger Chrome's
+  // "Error when communicating with the native messaging host."
+  // Redirect all console output to stderr for the lifetime of this process.
+  console.log   = (...args: unknown[]) => process.stderr.write(args.join(' ') + '\n');
+  console.info  = console.log;
+  console.debug = console.log;
+  console.warn  = (...args: unknown[]) => process.stderr.write(args.join(' ') + '\n');
+
   let payload: WebTapePayload;
 
   try {
@@ -73,19 +135,19 @@ export async function runNativeHost(): Promise<void> {
     const msg = JSON.parse(raw.toString('utf-8'));
 
     if (msg.type === 'ping') {
-      writeNativeMessage({ type: 'pong', version: VERSION });
-      process.exit(0);
+      writeNativeMessageAndExit({ type: 'pong', version: VERSION }, 0);
+      return;
     }
 
     if (msg.type !== 'recording') {
-      writeNativeMessage({ type: 'error', error: `Unknown message type: ${msg.type}` });
-      process.exit(1);
+      writeNativeMessageAndExit({ type: 'error', error: `Unknown message type: ${msg.type}` }, 1);
+      return;
     }
 
     payload = msg.payload as WebTapePayload;
   } catch (err) {
-    writeNativeMessage({ type: 'error', error: String(err) });
-    process.exit(1);
+    writeNativeMessageAndExit({ type: 'error', error: String(err) }, 1);
+    return;
   }
 
   let sessionDir: string;
@@ -93,10 +155,9 @@ export async function runNativeHost(): Promise<void> {
     const workspaceRoot = resolveWorkspaceRoot();
     const workspace = ensureWorkspace(workspaceRoot, VERSION);
     sessionDir = saveRecording(workspace, payload);
-    writeNativeMessage({ type: 'received', session: sessionDir });
   } catch (err) {
-    writeNativeMessage({ type: 'error', error: String(err) });
-    process.exit(1);
+    writeNativeMessageAndExit({ type: 'error', error: String(err) }, 1);
+    return;
   }
 
   // Spawn a detached child process to run AI analysis so the native host
@@ -122,7 +183,7 @@ export async function runNativeHost(): Promise<void> {
     }
   }
 
-  process.exit(0);
+  writeNativeMessageAndExit({ type: 'received', session: sessionDir }, 0);
 }
 
 /**
