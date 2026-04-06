@@ -22,7 +22,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install root dependencies (provides jszip for lib copy)
+        run: npm install
+
+      - name: Install recorder dependencies
         working-directory: packages/webtape-recorder
         run: npm install
 

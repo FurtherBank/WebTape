@@ -4,8 +4,8 @@
   "description": "WebTape Chrome Extension — records web actions and network requests for LLM analysis.",
   "private": true,
   "scripts": {
-    "postinstall": "cp ../../node_modules/jszip/dist/jszip.min.js lib/jszip.min.js",
-    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css lib/ icons/"
+    "postinstall": "node -e \"const fs=require('fs'),path=require('path');const local=path.join(__dirname,'node_modules/jszip/dist/jszip.min.js');const root=path.join(__dirname,'../../node_modules/jszip/dist/jszip.min.js');const src=fs.existsSync(local)?local:root;fs.copyFileSync(src,'lib/jszip.min.js');console.log('Copied jszip.min.js from',src)\"",
+    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js rules.js popup.html popup.js popup.css record-launcher.html record-launcher.js lib/ icons/"
   },
   "repository": {
     "type": "git",
