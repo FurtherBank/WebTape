@@ -1,5 +1,7 @@
 'use strict';
 
+import { SIGNIFICANT_KEYS } from './rules.js';
+
 (function () {
   // Avoid injecting multiple times
   if (window.__webTapeInjected) return;
@@ -73,7 +75,7 @@
   }, true);
 
   document.addEventListener('keydown', (e) => {
-    if (WebTapeRules.SIGNIFICANT_KEYS.has(e.key)) {
+    if (SIGNIFICANT_KEYS.has(e.key)) {
       sendAction('KEYDOWN', e.target, { key: e.key });
     }
   }, true);
