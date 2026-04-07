@@ -20,7 +20,7 @@
     "automation",
     "llm"
   ],
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "devDependencies": {
     "esbuild": "^0.28.0"
   }
