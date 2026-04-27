@@ -166,4 +166,4 @@ git push origin v1.x.x
 
 ## 📄 开源协议
 
-基于 **PolyForm Noncommercial 1.0.0** 协议开源。允许个人学习、研究和非商业用途自由使用；**商业用途需取得授权**。详见 [LICENSE](./LICENSE)。
+基于 **Apache License 2.0** 开源。详见 [LICENSE](./LICENSE)。

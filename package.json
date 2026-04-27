@@ -12,5 +12,5 @@
     "url": "git+https://github.com/FurtherBank/WebTape.git"
   },
   "keywords": ["chrome-extension", "recording", "automation", "llm"],
-  "license": "PolyForm-Noncommercial-1.0.0"
+  "license": "Apache-2.0"
 }

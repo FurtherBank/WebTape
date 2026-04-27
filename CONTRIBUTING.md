@@ -4,9 +4,9 @@
 
 ## 许可协议声明
 
-WebTape 基于 **PolyForm Noncommercial 1.0.0** 许可证发布。
+WebTape 基于 **Apache License 2.0** 发布。
 
-**提交 Pull Request 即表示你同意**：你的贡献将以相同的 PolyForm Noncommercial 1.0.0 协议授权给本项目，项目维护者有权在该协议框架内使用、修改和分发你的贡献。
+**提交 Pull Request 即表示你同意**：你的贡献将以 Apache License 2.0 授权给本项目，项目维护者有权在该协议框架内使用、修改和分发你的贡献。
 
 ## 禁止用途说明
 
