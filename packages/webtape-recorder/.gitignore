@@ -1,0 +1,14 @@
+# esbuild bundle outputs (generated from src/ during build)
+# Leading slash anchors patterns to this directory only, not subdirectories
+/background.js
+/content.js
+/popup.js
+/record-launcher.js
+# rules.js is inlined by esbuild into each bundle; root-level copy is no longer needed
+/rules.js
+
+# Legacy jszip copy (no longer used)
+/lib/
+
+# Build output
+/dist/

@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install recorder dependencies (esbuild)
         working-directory: packages/webtape-recorder
         run: npm install
 

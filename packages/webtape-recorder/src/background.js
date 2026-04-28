@@ -1,6 +1,16 @@
 'use strict';
 
-importScripts('rules.js');
+import {
+  NETWORK_IDLE_DELAY_MS,
+  RECORDING_GRACE_MS,
+  SCHEME_AUTO_IDLE_MS,
+  SCHEME_MIN_RECORDING_BEFORE_IDLE_MS,
+  SCHEME_MAX_RECORDING_MS,
+  A11Y_IGNORED_ROLES,
+  shouldCaptureByType,
+  shouldRecordNetworkUrl,
+  isApiMimeType,
+} from './rules.js';
 
 /**
  * Asia/Shanghai wall time (+08:00, fixed offset) with ms — no Intl fractionalSecondDigits
@@ -66,14 +76,7 @@ let requestCounter = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let networkIdleTimer = null;
 
-// Timing constants — sourced from rules.js (WebTapeRules)
-const {
-  NETWORK_IDLE_DELAY_MS,
-  RECORDING_GRACE_MS,
-  SCHEME_AUTO_IDLE_MS,
-  SCHEME_MIN_RECORDING_BEFORE_IDLE_MS,
-  SCHEME_MAX_RECORDING_MS,
-} = WebTapeRules;
+// Timing constants imported from rules.js
 
 /** scheme / launcher 触发的本次录制是否启用自动停止 */
 let schemeAutoStopEnabled = false;
@@ -102,8 +105,7 @@ let currentNavigationUrl = '';
 /** @type {boolean} Set to true once the INITIAL block has been created */
 let initialLoadComplete = false;
 
-// Request capture functions — sourced from rules.js (WebTapeRules)
-const { shouldCaptureByType, shouldRecordNetworkUrl, isApiMimeType } = WebTapeRules;
+// Request capture functions imported from rules.js
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,7 +208,7 @@ function summariseA11yNodes(nodes) {
 
   for (const node of nodes) {
     const role = node.role && node.role.value;
-    if (!role || WebTapeRules.A11Y_IGNORED_ROLES.has(role)) continue;
+    if (!role || A11Y_IGNORED_ROLES.has(role)) continue;
 
     const name = node.name && node.name.value ? node.name.value.trim() : '';
     const description = node.description && node.description.value

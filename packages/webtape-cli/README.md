@@ -1,108 +1,102 @@
-# 🚀 WebTape CLI：让网页自动化像录屏一样简单
+# 🚀 WebTape CLI：让接口调试像录屏一样直观
 
-**WebTape CLI** 是 [WebTape](https://github.com/FurtherBank/WebTape) 生态中的核心动力引擎。  
+**WebTape CLI** 是 [WebTape](https://github.com/FurtherBank/WebTape) 生态中的核心分析引擎。
 
-它能将你在浏览器中的操作，瞬间转化为可直接运行且**不依赖网站 Open API 和浏览器手动操作**的自动化脚本。
-
-不再需要抓包、不再需要分析复杂的 API 文档、不再需要手动处理 Cookie。你只需在浏览器里点一点，剩下的交给 WebTape。
+它能将你在浏览器中的操作（针对**你自己负责或有权限访问的系统**），转化为结构化的接口调用上下文，供 AI 分析并生成可复用的测试脚本。
 
 ---
 
-## ✨ 核心价值：录制即自动化集成
+## ✨ 核心价值：录制即接口文档
 
-通过 WebTape 插件录制你的业务操作，CLI 会自动接收并保存所有网络请求。  
-
-配合 AI 分析，它能直接理解你在网站上的操作，并将这些操作流程编写成**可以自动化运行的**`request.js`脚本，用于快速将网页操作以命令行、Agent 等形式自动化。
+通过 WebTape 插件录制你的业务操作，CLI 自动接收所有网络请求，配合 AI 分析，将操作流程整理成完整的接口调用链路文档，并生成可自动化运行的 `request.js` 脚本。
 
 其中：
-- 可自动复用你电脑 Chrome 浏览器的登录状态（Cookie），个人场景下运行无需额外网站登录过程。
-- 对于上层业务流程，AI 会深度梳理接口间的调用链路，及其中输入和流转过程中的参数字段关系，帮你从繁琐的逆向工程和拼代码中解脱出来。
 
-这使得你可以将生成的函数快速集成到自己的工具、爬虫或 Agent 中：  
+- 支持复用你本机 Chrome 浏览器的登录态（Cookie），开发调试无需重复配置认证。
+- AI 会深度梳理接口间的调用依赖和参数流转，帮你从手动抓包分析中解脱出来。
 
-让需要打开浏览器的操作可以**完全自动化**，  
-让自动化 API 调用可以**不限于网站 Open API**，**只要日常浏览器使用能通的 API，自动化都可以通**
+生成的脚本可集成到你自己的**测试工具、开发脚手架或 AI Agent** 中，实现对**你有权限操作**的系统接口的自动化调用。
 
-无论是获取私有接口数据，还是执行复杂的业务流程，都能像调用本地函数一样简单。
+> **重要**：本工具仅供对你拥有合法权限的系统进行开发、测试和自动化。请勿用于未经授权访问第三方系统，请遵守目标系统的服务条款。
 
 ---
 
 ## 🛠️ 快速上手
 
 ### 第一步：安装
-> 如果你还没有安装 Node.js，请先参考 [Node.js 安装指南](https://nodejs.org/zh-cn/download/package-manager) 安装 Node 和 npm。
 
-只需一行命令，开启你的自动化之旅：
+> 如果你还没有安装 Node.js，请先参考 [Node.js 安装指南](https://nodejs.org/zh-cn/download/package-manager) 安装 Node 和 npm。
 
 ```bash
 npm install -g webtape
 ```
 
-### 第二步：启动服务
-启动你的专属 Webhook 接收服务器：
-```bash
-webtape serve
-```
-*首次启动，将自动创建默认工作区在你的**桌面 `WebTape` 文件夹**下。*
-
-### 第三步：配置插件
-在 WebTape Chrome 插件中，将 Webhook 地址设置为：
-`http://localhost:5643/webhook`
-
-### Native Messaging（自动保存录制到本机）
-若使用扩展的「直连 CLI」能力，需先执行一次：
+### 第二步：注册 Native Messaging Host
 
 ```bash
 webtape install
 ```
 
-CLI 会按**固定插件 ID** `jcbbpjhckcknopggkbafcjnnhddjpfhm`（与官方扩展 `manifest.json` 中 `key` 一致）注册 Native Messaging Host，**无需**再传 `--extension-id`。诊断可运行：`node scripts/check.mjs`（在 `packages/webtape-cli` 目录下）。
+CLI 会按固定插件 ID `jcbbpjhckcknopggkbafcjnnhddjpfhm` 注册 Native Messaging Host，完成后插件就能在录制结束时自动将数据发送至本机 CLI。
+
+### 第三步：录制并分析
+
+在 WebTape 插件中完成录制，数据将自动保存到本地工作区，然后运行：
+
+```bash
+webtape analyze <session-name>
+```
+
+AI 将自动生成 `analysis_report.md` 业务文档及 `request.js` 可执行脚本。
 
 ---
 
-## WIP 视频演示
+## 📂 工作区结构
 
-### 场景：从网页操作到自动化脚本生成
+运行 `webtape install` 后，系统会在 `~/Desktop/WebTape`（可自定义）初始化工作区：
 
-| 阶段 | 操作 | 核心产出 |
-| :--- | :--- | :--- |
-| **1. 接收** | 终端运行 `webtape serve`，插件端点击导出。 | 录制数据自动进入 `recordings/` 目录。 |
-| **2. 分析** | 运行 `webtape analyze <session>`。 | AI 自动生成 `analysis_report.md` 业务文档。 |
-| **3. 生成** | AI 根据 `AGENTS.md` 规则编写代码。 | 自动生成 `request.js`，包含封装好的业务函数。 |
-| **4. 集成** | 在你的项目中 `import { xxx } from './request.js'`。 | **无需逆向工程**，直接实现网页功能自动化。 |
-
-## 📂 你的自动化工作区 (Workspace)
-
-当你运行 `serve` 命令时，系统会自动为你准备好一切：
-- **recordings/**：安全存储你所有的录制会话。
-- **AGENTS.md**：内置 AI 分析规则，确保你的 AI 助手（如 Cursor）能精准理解业务逻辑。
-- **自动环境配置**：自动初始化 Node.js 环境并安装必要依赖，确保生成的脚本开箱即用。
+```
+WebTape/
+├── recordings/          # 所有录制会话
+│   └── <session>/
+│       ├── _context.md  # 由 CLI 生成的接口上下文文档（敏感头已脱敏）
+│       ├── index.json
+│       ├── requests/
+│       └── responses/
+└── AGENTS.md            # AI 分析规则，指导 Cursor/Claude 理解业务逻辑
+```
 
 ---
 
-## 💡 使用场景
+## 🔒 隐私与数据安全
 
-- **数据采集**：无需研究复杂的反爬和登录校验，直接复用浏览器的登录态获取数据。
-- **业务自动化**：将重复的网页操作转化为脚本，定时运行或集成到你的工作流中。
-- **AI Agent 增强**：为你的 AI 助手提供直接操作真实业务接口的能力。
+- 所有录制数据**仅存储于你的本机**，不上传至任何远程服务器。
+- 生成的 `_context.md` 中，`Cookie` 头仅展示 cookie 名称列表（不含值），`Authorization`、`token` 等认证凭证头的值会被替换为 `[redacted]`。
+- 完整的请求/响应原始数据保留在 `recordings/` 目录下，由你自行管理。
 
 ---
 
-## ⚠️ 温馨提示 (macOS 用户)
-生成的 request 代码最终基于`chrome-cookies-secure`库获取本机 Chrome 浏览器的 Cookie 信息，  
-macOS 在第一次运行时会弹出安全提示。
+## 📋 CLI 命令参考
 
+| 命令 | 选项 | 说明 |
+|------|------|------|
+| `install` | `--no-open` | 注册 Native Messaging Host；默认打开 Chrome Web Store 页 |
+| `analyze` | `--backend` | 指定 AI 后端（`cursor` / `claude` / `none`） |
+| `list` | — | 列出所有录制会话 |
+| `config` | — | 交互式配置向导 |
 
+---
 
-- **操作**：请输入你的 **Mac 开机密码**。
-- **建议**：请务必点击 **“始终允许” (Always Allow)**，以获得最流畅的自动化体验。
+## ⚠️ macOS 用户提示
+
+生成的 `request.js` 脚本通过 `chrome-cookies-secure` 库读取本机 Chrome 的 Cookie，macOS 首次运行时会弹出安全提示，请输入**开机密码**并选择**「始终允许」**。
 
 ---
 
 ## 📄 开源协议
-基于 **MIT** 协议开源。
+
+基于 **Apache License 2.0** 开源。
 
 ---
 
-**准备好释放网页自动化的潜力了吗？**  
-[立即开始使用 WebTape](https://github.com/FurtherBank/WebTape)
+[返回 WebTape 主项目](https://github.com/FurtherBank/WebTape)

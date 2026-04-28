@@ -47,6 +47,8 @@ function renderHeaders(
       lines.push(`${key}: [${names.length} cookies: ${names.join(', ')}]`);
     } else if (sensitiveRule === 'presence_only') {
       lines.push(`${key}: [${lower} present]`);
+    } else if (sensitiveRule === 'redacted') {
+      lines.push(`${key}: [redacted]`);
     } else {
       lines.push(`${key}: ${value.length > HEADER_VALUE_MAX_LENGTH ? value.slice(0, HEADER_VALUE_MAX_LENGTH) + '…' : value}`);
     }

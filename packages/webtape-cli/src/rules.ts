@@ -71,12 +71,32 @@ export function isNoiseHeader(
 
 /**
  * 需要脱敏渲染的 header 名 → 处理策略。
- * - 'cookie'     → 只显示 cookie 名称列表，不显示值
- * - 'set-cookie' → 只提示存在
+ *
+ * - 'cookie_names'   → Cookie 只展示 key 名称列表，不展示值（防止凭证泄露到 context.md）
+ * - 'presence_only'  → 只提示"存在"，完全隐藏内容
+ * - 'redacted'       → 值替换为 [redacted]，保留 header 名以供 AI 识别接口认证方式
+ *
+ * 这些头的原始值仍保留在 requests/ 目录的原始 JSON 文件中，
+ * 仅在生成给 AI 阅读的 _context.md 综述时进行脱敏处理。
  */
-export const SENSITIVE_HEADER_RULES: Record<string, 'cookie_names' | 'presence_only'> = {
+export const SENSITIVE_HEADER_RULES: Record<string, 'cookie_names' | 'presence_only' | 'redacted'> = {
+  // Session / identity
   cookie: 'cookie_names',
   'set-cookie': 'presence_only',
+
+  // Auth tokens
+  authorization: 'redacted',
+  'proxy-authorization': 'redacted',
+  'x-auth-token': 'redacted',
+  'x-access-token': 'redacted',
+  'x-api-key': 'redacted',
+  'x-token': 'redacted',
+  'x-csrf-token': 'redacted',
+  'x-xsrf-token': 'redacted',
+  'x-session-token': 'redacted',
+  'x-request-token': 'redacted',
+  'api-key': 'redacted',
+  token: 'redacted',
 };
 
 /** header 值的最大显示长度，超出截断 */

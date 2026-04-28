@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "description": "WebTape Chrome Extension — records web actions and network requests for LLM analysis.",
   "private": true,
+  "type": "module",
   "scripts": {
-    "postinstall": "cp ../../node_modules/jszip/dist/jszip.min.js lib/jszip.min.js",
-    "build": "mkdir -p dist && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css lib/ icons/"
+    "bundle": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs && mkdir -p dist && rm -f dist/webtape.zip && zip -r dist/webtape.zip manifest.json background.js content.js popup.html popup.js popup.css record-launcher.html record-launcher.js icons/"
   },
   "repository": {
     "type": "git",
@@ -13,9 +14,14 @@
     "directory": "packages/webtape-recorder"
   },
   "homepage": "https://github.com/FurtherBank/WebTape/tree/main/packages/webtape-recorder",
-  "keywords": ["chrome-extension", "recording", "automation", "llm"],
-  "license": "MIT",
-  "dependencies": {
-    "jszip": "^3.10.1"
+  "keywords": [
+    "chrome-extension",
+    "recording",
+    "automation",
+    "llm"
+  ],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }

@@ -331,3 +331,48 @@ body {
   color: #f48a8a;
   border: 1px solid #5c1e1e;
 }
+
+.privacy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  background: #0f1a2e;
+  border: 1px solid #1e3a5a;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.privacy-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.privacy-text {
+  font-size: 10px;
+  color: #7ab8e8;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.privacy-detail {
+  display: none;
+  font-size: 10px;
+  color: #6a8aaa;
+  line-height: 1.5;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid #1e3a5a;
+  width: 100%;
+}
+
+.privacy-notice.expanded {
+  flex-wrap: wrap;
+}
+
+.privacy-notice.expanded .privacy-detail {
+  display: block;
+}

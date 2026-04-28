@@ -223,6 +223,17 @@ if (btnCopyLauncherUrl) {
 }
 
 // ---------------------------------------------------------------------------
+// 隐私提示
+// ---------------------------------------------------------------------------
+
+const privacyNoticeEl = document.getElementById('privacyNotice');
+if (privacyNoticeEl) {
+  privacyNoticeEl.addEventListener('click', () => {
+    privacyNoticeEl.classList.toggle('expanded');
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Native Host 连接检测
 // ---------------------------------------------------------------------------
 
